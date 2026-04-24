@@ -19,6 +19,12 @@
   --border: #292524;
   --border-muted: #44403c;
 
+  /* Higher-contrast muted ramps for navigation and small text on dark bg.
+     WCAG AA requires 4.5:1 for body text; --fg-muted (#a8a29e on #010105)
+     lands at 3.2:1 which fails. These hit ~6:1. */
+  --nav-fg: #d6d3d1;       /* stone-300 — 6.2:1 on --bg */
+  --nav-fg-dim: #a8a29e;   /* stone-400 — 3.2:1, only for metadata chips */
+
   /* Brand accents (cross-theme) */
   --brand: #0d7835;
   --brand-hover: #0d7835e5;
@@ -134,6 +140,10 @@ body {
 /* Hairline utility */
 .hairline { border-color: var(--border); }
 .hairline-muted { border-color: var(--border-muted); }
+
+/* Hide overflow scroll bars in horizontal nav on mobile */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; }
 
 /* Fact-anchor chip (§10.2 primitive) */
 .fact-anchor {

@@ -3,13 +3,15 @@ type Props = { size?: number; showText?: boolean };
 
 export function HausbuchMark({ size = 18, showText = true }: Props) {
   return (
-    <span className="inline-flex items-center gap-2.5" aria-label="Hausbuch">
+    <span className="inline-flex items-center gap-2.5">
       <svg
         width={size}
         height={size}
         viewBox="0 0 24 24"
         fill="none"
-        aria-hidden="true"
+        role="img"
+        aria-label={showText ? undefined : "Hausbuch"}
+        aria-hidden={showText ? "true" : undefined}
       >
         {/* A roof over a stable baseline — "house book" glyph */}
         <path

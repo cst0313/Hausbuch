@@ -28,12 +28,16 @@ export function Nav() {
         borderBottom: "1px solid var(--border)",
       }}
     >
-      <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
-        <Link href="/" className="transition-opacity hover:opacity-80">
+      <div className="max-w-6xl mx-auto px-4 md:px-6 h-14 flex items-center justify-between gap-3">
+        <Link
+          href="/"
+          className="transition-opacity hover:opacity-80 shrink-0"
+          aria-label="Hausbuch home"
+        >
           <HausbuchMark size={18} />
         </Link>
 
-        <div className="flex items-center gap-1 text-[13px]">
+        <div className="flex items-center gap-0.5 md:gap-1 text-[13px] overflow-x-auto no-scrollbar">
           {PRIMARY.map((item) => {
             const active = item.matchPrefix
               ? path?.startsWith(item.matchPrefix)
@@ -42,9 +46,10 @@ export function Nav() {
               <Link
                 key={item.href}
                 href={item.href}
-                className="px-3 py-1.5 rounded-md transition-colors"
+                aria-current={active ? "page" : undefined}
+                className="nav-link px-2.5 md:px-3 py-1.5 rounded-md transition-colors whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--brand)]"
                 style={{
-                  color: active ? "var(--fg)" : "var(--fg-muted)",
+                  color: active ? "var(--fg)" : "var(--nav-fg)",
                   background: active ? "var(--bg-elevated)" : "transparent",
                 }}
               >
@@ -53,7 +58,7 @@ export function Nav() {
             );
           })}
           <span
-            className="mx-2 h-4 w-px"
+            className="hidden md:block mx-2 h-4 w-px"
             style={{ background: "var(--border-muted)" }}
             aria-hidden
           />
@@ -61,13 +66,13 @@ export function Nav() {
             <Link
               key={item.href}
               href={item.href}
-              className="px-2 py-1.5 rounded-md transition-colors text-[12px]"
-              style={{ color: "var(--fg-dim)" }}
+              className="hidden md:inline-flex px-2 py-1.5 rounded-md transition-colors text-[12px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--brand)]"
+              style={{ color: "var(--nav-fg-dim)" }}
             >
               {t(item.key)}
             </Link>
           ))}
-          <span className="ml-3">
+          <span className="ml-2 md:ml-3 shrink-0">
             <LocaleToggle />
           </span>
         </div>

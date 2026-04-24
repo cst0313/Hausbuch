@@ -1,8 +1,21 @@
 // path: src/app/layout.tsx
 import type { Metadata } from "next";
-import { Instrument_Serif, JetBrains_Mono, Inter } from "next/font/google";
+import { Instrument_Serif, JetBrains_Mono, Inter_Tight } from "next/font/google";
 import "./globals.css";
 import { KeyboardShortcuts } from "@/components/KeyboardShortcuts";
+import { LocaleProvider } from "@/components/LocaleProvider";
+
+const sans = Inter_Tight({
+  variable: "--font-sans",
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+});
+
+const display = Inter_Tight({
+  variable: "--font-display",
+  subsets: ["latin"],
+  weight: ["500", "600"],
+});
 
 const serif = Instrument_Serif({
   variable: "--font-serif",
@@ -14,39 +27,33 @@ const serif = Instrument_Serif({
 const mono = JetBrains_Mono({
   variable: "--font-mono",
   subsets: ["latin"],
-  weight: ["300", "400", "500"],
-});
-
-const sans = Inter({
-  variable: "--font-sans",
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600"],
+  weight: ["400", "500"],
 });
 
 export const metadata: Metadata = {
-  title: "Lumen — your agents shouldn't have to ask twice",
+  title: "Hausbuch — one document per building",
   description:
-    "Lumen is a context engine. It ingests scattered business data and maintains a self-updating, bitemporal, citation-backed Context.md for every entity in your company — so every AI agent reads the same truth.",
+    "Hausbuch turns scattered emails, PDFs, ERP rows and Slack into one living, self-updating, citation-backed Context.md per property. 90% of property managers react. Hausbuch remembers.",
   openGraph: {
-    title: "Lumen — the context engine",
+    title: "Hausbuch — one document per building",
     description:
-      "Company memory, not amnesia management. A self-updating Context.md for every entity in your business.",
+      "Plain English. No legalese. The document every building should already have.",
   },
 };
 
 export default function RootLayout({
   children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+}: Readonly<{ children: React.ReactNode }>) {
   return (
     <html
       lang="en"
-      className={`${serif.variable} ${mono.variable} ${sans.variable} antialiased`}
+      className={`${sans.variable} ${display.variable} ${serif.variable} ${mono.variable} antialiased`}
     >
       <body className="min-h-screen">
-        <KeyboardShortcuts />
-        {children}
+        <LocaleProvider>
+          <KeyboardShortcuts />
+          {children}
+        </LocaleProvider>
       </body>
     </html>
   );

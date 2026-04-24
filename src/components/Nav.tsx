@@ -1,48 +1,74 @@
 // path: src/components/Nav.tsx
+"use client";
+
 import Link from "next/link";
-import { LumenMark } from "./LumenMark";
-import { LiveCostTicker } from "./LiveCostTicker";
+import { usePathname } from "next/navigation";
+import { HausbuchMark } from "./HausbuchMark";
+import { LocaleToggle } from "./LocaleToggle";
+import { useLocale } from "./LocaleProvider";
+
+const PRIMARY = [
+  { href: "/inbox", key: "nav.inbox" },
+  { href: "/queue", key: "nav.queue" },
+  { href: "/context/berliner-str-42", key: "nav.context", matchPrefix: "/context" },
+  { href: "/audit", key: "nav.audit" },
+];
+
+const SECONDARY = [{ href: "/research", key: "nav.research" }];
 
 export function Nav() {
+  const { t } = useLocale();
+  const path = usePathname();
+
   return (
     <nav
       className="sticky top-0 z-40 backdrop-blur-md"
       style={{
-        background: "rgba(10, 9, 8, 0.75)",
-        borderBottom: "1px solid var(--line)",
+        background: "color-mix(in srgb, var(--bg) 75%, transparent)",
+        borderBottom: "1px solid var(--border)",
       }}
     >
-      <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-        <Link href="/" className="hover:opacity-80 transition-opacity">
-          <LumenMark size={18} />
+      <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+        <Link href="/" className="transition-opacity hover:opacity-80">
+          <HausbuchMark size={18} />
         </Link>
-        <div className="flex items-center gap-6 text-[13px]">
-          <Link href="/research" className="font-mono transition-colors hover:text-amber-bright" style={{ color: "var(--ink-muted)" }}>
-            /research
-          </Link>
-          <Link href="/demo" className="font-mono transition-colors hover:text-amber-bright" style={{ color: "var(--ink-muted)" }}>
-            /demo
-          </Link>
-          <Link href="/graph" className="font-mono transition-colors hover:text-amber-bright" style={{ color: "var(--ink-muted)" }}>
-            /graph
-          </Link>
-          <Link href="/technical" className="font-mono transition-colors hover:text-amber-bright" style={{ color: "var(--ink-muted)" }}>
-            /technical
-          </Link>
-          <Link href="/protocol" className="font-mono transition-colors hover:text-amber-bright" style={{ color: "var(--ink-muted)" }}>
-            /protocol
-          </Link>
-          <LiveCostTicker />
+
+        <div className="flex items-center gap-1 text-[13px]">
+          {PRIMARY.map((item) => {
+            const active = item.matchPrefix
+              ? path?.startsWith(item.matchPrefix)
+              : path === item.href;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="px-3 py-1.5 rounded-md transition-colors"
+                style={{
+                  color: active ? "var(--fg)" : "var(--fg-muted)",
+                  background: active ? "var(--bg-elevated)" : "transparent",
+                }}
+              >
+                {t(item.key)}
+              </Link>
+            );
+          })}
           <span
-            className="hidden lg:inline-flex px-2.5 py-1 rounded-full text-[11px] font-mono items-center gap-1.5"
-            style={{
-              background: "rgba(232, 178, 107, 0.1)",
-              border: "1px solid rgba(232, 178, 107, 0.3)",
-              color: "var(--amber-bright)",
-            }}
-          >
-            <span className="w-1.5 h-1.5 rounded-full glow-pulse" style={{ background: "var(--amber)" }} />
-            berlin · apr 2026
+            className="mx-2 h-4 w-px"
+            style={{ background: "var(--border-muted)" }}
+            aria-hidden
+          />
+          {SECONDARY.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="px-2 py-1.5 rounded-md transition-colors text-[12px]"
+              style={{ color: "var(--fg-dim)" }}
+            >
+              {t(item.key)}
+            </Link>
+          ))}
+          <span className="ml-3">
+            <LocaleToggle />
           </span>
         </div>
       </div>

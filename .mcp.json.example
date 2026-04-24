@@ -1,0 +1,21 @@
+{
+  "//": "Copy to .mcp.json and fill in your keys. Restart Claude Code to load.",
+  "mcpServers": {
+    "magic": {
+      "//": "21st.dev Magic MCP — https://21st.dev/magic/console",
+      "command": "npx",
+      "args": ["-y", "@21st-dev/magic@latest"],
+      "env": {
+        "API_KEY": "an_sk_..."
+      }
+    },
+    "stitch": {
+      "//": "Google Stitch MCP — requires GOOGLE_CLOUD_PROJECT or STITCH_API_KEY",
+      "command": "npx",
+      "args": ["-y", "@_davideast/stitch-mcp", "proxy"],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "your-gcp-project-id"
+      }
+    }
+  }
+}

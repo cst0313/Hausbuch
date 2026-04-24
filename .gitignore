@@ -53,3 +53,6 @@ DESIGN.md
 AGENTS.md
 CLAUDE.md
 hackathon_description.md
+
+# MCP config may contain API keys — use .mcp.json.example for structure
+.mcp.json

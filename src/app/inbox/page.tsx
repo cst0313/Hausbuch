@@ -6,39 +6,79 @@ import { useEffect, useState } from "react";
 import { Nav } from "@/components/Nav";
 import { useLocale } from "@/components/LocaleProvider";
 
-type Building = {
+type Fact = {
   id: string;
-  name: string;
+  predicate: string;
+  value: string | number | boolean | null;
+  source: string;
+  known_from: string;
+  valid_from?: string | null;
+};
+
+type Source = { id: string; title: string; kind: string };
+
+type DigestItem = {
+  fact: Fact;
+  source: Source | null;
+  kind: "added" | "superseded" | "conflict";
+  partnerPredicate?: string;
+};
+
+type Digest = {
+  entity: string;
+  since: string;
   new: DigestItem[];
   decide: DigestItem[];
   changed: DigestItem[];
 };
 
-type DigestItem = {
-  predicate: string;
-  value: string;
-  source: string;
-  when: string;
-  kind?: "conflict" | "superseded" | "added";
+type Building = {
+  entity: string;
+  name: string;
+  digest: Digest;
 };
+
+// Known entities today: just the seed. Multi-building expansion lands when
+// listEntities() grows beyond one property in Phase 2.
+const KNOWN_ENTITIES = ["property:berliner-str-42"];
 
 export default function InboxPage() {
   const { t } = useLocale();
   const [buildings, setBuildings] = useState<Building[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Placeholder: pull from the seeded entity. Real multi-entity digest
-    // wires in Phase 3 with the action log (FR-7 / FR-8).
-    fetch("/api/context/property%3Aberliner-str-42?detail=3&format=json")
-      .then((r) => (r.ok ? r.json() : null))
-      .catch(() => null)
-      .then((data) => {
-        if (!data) {
-          setBuildings([demoBuilding]);
-        } else {
-          setBuildings([demoBuilding]);
-        }
+    let cancelled = false;
+    const DAYS = 365; // for the demo, surface everything in the last year
+    Promise.all(
+      KNOWN_ENTITIES.map(async (entity) => {
+        const [digestRes, ctxRes] = await Promise.all([
+          fetch(`/api/digest/${encodeURIComponent(entity)}?days=${DAYS}`).then(
+            (r) => r.json() as Promise<Digest>,
+          ),
+          fetch(
+            `/api/context/${encodeURIComponent(entity)}?format=json&detail=3`,
+          ).then((r) => r.json()),
+        ]);
+        const addr = ctxRes.facts?.find(
+          (f: Fact) => f.predicate === "identity.address",
+        );
+        return {
+          entity,
+          name: addr ? String(addr.value) : entity,
+          digest: digestRes,
+        } as Building;
+      }),
+    )
+      .then((bs) => {
+        if (!cancelled) setBuildings(bs);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(String(e));
       });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (
@@ -62,7 +102,16 @@ export default function InboxPage() {
           </p>
         </header>
 
-        {buildings === null && (
+        {error && (
+          <p
+            className="text-[13px] font-mono"
+            style={{ color: "var(--danger)" }}
+          >
+            {t("common.error")}: {error}
+          </p>
+        )}
+
+        {buildings === null && !error && (
           <p style={{ color: "var(--fg-muted)" }}>{t("common.loading")}</p>
         )}
 
@@ -71,15 +120,16 @@ export default function InboxPage() {
         )}
 
         <div className="space-y-16">
-          {buildings?.map((b) => <BuildingDigest key={b.id} building={b} />)}
+          {buildings?.map((b) => <BuildingDigestBlock key={b.entity} building={b} />)}
         </div>
       </main>
     </>
   );
 }
 
-function BuildingDigest({ building }: { building: Building }) {
+function BuildingDigestBlock({ building }: { building: Building }) {
   const { t } = useLocale();
+  const id = building.entity.replace(/^property:/, "");
   return (
     <article>
       <div className="flex items-baseline justify-between mb-6">
@@ -90,7 +140,7 @@ function BuildingDigest({ building }: { building: Building }) {
           {building.name}
         </h2>
         <Link
-          href={`/context/${building.id.replace("property:", "")}`}
+          href={`/context/${id}`}
           className="text-[12px] font-mono transition-colors hover:text-[color:var(--fg)]"
           style={{ color: "var(--fg-dim)" }}
         >
@@ -101,17 +151,17 @@ function BuildingDigest({ building }: { building: Building }) {
       <div className="grid gap-8 md:grid-cols-3">
         <Section
           title={t("inbox.section.new")}
-          items={building.new}
+          items={building.digest.new}
           accent="var(--success)"
         />
         <Section
           title={t("inbox.section.decide")}
-          items={building.decide}
+          items={building.digest.decide}
           accent="var(--warning)"
         />
         <Section
           title={t("inbox.section.changed")}
-          items={building.changed}
+          items={building.digest.changed}
           accent="var(--fg-dim)"
         />
       </div>
@@ -141,6 +191,7 @@ function Section({
         <span
           className="w-1.5 h-1.5 rounded-full"
           style={{ background: accent }}
+          aria-hidden
         />
         <h3
           className="text-[12px] font-mono uppercase tracking-wider"
@@ -168,15 +219,19 @@ function Section({
                   className="font-mono text-[11px] shrink-0"
                   style={{ color: "var(--fg-dim)" }}
                 >
-                  {it.predicate}
+                  {it.fact.predicate}
                 </span>
-                <span style={{ color: "var(--fg)" }}>{it.value}</span>
+                <span style={{ color: "var(--fg)" }}>
+                  {it.kind === "conflict" && it.partnerPredicate
+                    ? it.partnerPredicate
+                    : String(it.fact.value)}
+                </span>
               </div>
               <div
                 className="mt-0.5 font-mono text-[11px]"
                 style={{ color: "var(--fg-dim)" }}
               >
-                {it.source} · {it.when}
+                {it.source?.title ?? it.fact.source} · {shortDate(it.fact.known_from)}
               </div>
             </li>
           ))}
@@ -186,42 +241,8 @@ function Section({
   );
 }
 
-// Placeholder digest — live data comes from FR-7 action log in Phase 3.
-const demoBuilding: Building = {
-  id: "property:berliner-str-42",
-  name: "Berliner Str. 42 · Mitte",
-  new: [
-    {
-      predicate: "tenancy.rent.next",
-      value: "€1,800 / mo from 2026-06-01",
-      source: "email:landlord@müller.de",
-      when: "2026-04-18",
-      kind: "added",
-    },
-    {
-      predicate: "condition.open_tickets",
-      value: "1 open",
-      source: "zendesk:T-2210",
-      when: "2026-04-22",
-      kind: "added",
-    },
-  ],
-  decide: [
-    {
-      predicate: "tenancy.rent.next",
-      value: "€1,650 contested vs €1,800",
-      source: "legal-memo-2026.pdf",
-      when: "2026-04-20",
-      kind: "conflict",
-    },
-  ],
-  changed: [
-    {
-      predicate: "contact.manager",
-      value: "Schneider → Hoffmann",
-      source: "erp:contacts#b-4412",
-      when: "2026-04-15",
-      kind: "superseded",
-    },
-  ],
-};
+function shortDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toISOString().slice(0, 10);
+}

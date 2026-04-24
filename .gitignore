@@ -52,6 +52,7 @@ tmp/
 DESIGN.md
 AGENTS.md
 CLAUDE.md
+NEXT.md
 hackathon_description.md
 
 # MCP config may contain API keys — use .mcp.json.example for structure

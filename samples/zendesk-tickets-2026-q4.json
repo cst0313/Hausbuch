@@ -1,0 +1,30 @@
+[
+  {
+    "id": "T-2314",
+    "property": "Berliner Str. 42",
+    "unit": "Apt 6",
+    "status": "closed",
+    "opened": "2026-10-22",
+    "closed": "2026-11-26",
+    "subject": "Kitchen faucet dripping",
+    "priority": "normal"
+  },
+  {
+    "id": "T-2341",
+    "property": "Berliner Str. 42",
+    "unit": "common area",
+    "status": "open",
+    "opened": "2026-11-15",
+    "subject": "Stairwell light flickering — replace ballast",
+    "priority": "low"
+  },
+  {
+    "id": "T-2355",
+    "property": "Berliner Str. 42",
+    "unit": "Apt 2",
+    "status": "open",
+    "opened": "2026-11-20",
+    "subject": "Window sealing — minor draft, requested in renewal letter",
+    "priority": "low"
+  }
+]

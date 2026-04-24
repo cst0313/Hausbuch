@@ -1,0 +1,32 @@
+[
+  {
+    "ts": "2026-10-22T11:30:00Z",
+    "channel": "#maint",
+    "user": "@oskar",
+    "text": "New ticket T-2314 opened: kitchen faucet dripping at Berliner Str. 42 Apt 6. Non-urgent, will schedule."
+  },
+  {
+    "ts": "2026-11-12T16:20:00Z",
+    "channel": "#maint",
+    "user": "@oskar",
+    "text": "Inspection Berliner Str. 42 abgeschlossen am 2026-11-12. 2 tickets outstanding."
+  },
+  {
+    "ts": "2026-11-15T09:03:00Z",
+    "channel": "#maint",
+    "user": "@oskar",
+    "text": "Ticket T-2341 added: stairwell lighting flicker 2nd floor. Needs new ballast."
+  },
+  {
+    "ts": "2026-11-20T14:48:00Z",
+    "channel": "#maint",
+    "user": "@oskar",
+    "text": "T-2314 Kitchen faucet — plumber scheduled 2026-11-24. Closing next week."
+  },
+  {
+    "ts": "2026-11-26T08:55:00Z",
+    "channel": "#maint",
+    "user": "@oskar",
+    "text": "T-2314 closed. Faucet replaced. Invoice on the way."
+  }
+]

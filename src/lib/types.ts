@@ -21,7 +21,8 @@ export type SourceKind =
   | "note"
   | "db"
   | "legal"
-  | "zendesk";
+  | "zendesk"
+  | "tavily";
 
 export type Source = {
   id: SourceId;

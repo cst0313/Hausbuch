@@ -3,7 +3,7 @@ import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
-import type { Fact, FactEvent, FactEventKind, Source } from "./types";
+import type { Fact, FactEvent, FactEventKind, FactValue, Source } from "./types";
 
 /**
  * Lumen storage. Single SQLite file. Append-only facts (one row per fact-event).
@@ -76,6 +76,26 @@ CREATE TABLE IF NOT EXISTS fact_events (
 
 CREATE INDEX IF NOT EXISTS idx_events_at    ON fact_events(at);
 CREATE INDEX IF NOT EXISTS idx_events_fact  ON fact_events(fact_id);
+
+CREATE TABLE IF NOT EXISTS proposals (
+  id            TEXT PRIMARY KEY,
+  entity        TEXT NOT NULL,
+  source_id     TEXT,
+  kind          TEXT NOT NULL CHECK(kind IN ('add','supersede','reject')),
+  payload_json  TEXT NOT NULL,
+  rationale     TEXT,
+  status        TEXT NOT NULL DEFAULT 'pending'
+                  CHECK(status IN ('pending','approved','rejected','superseded')),
+  created_at    INTEGER NOT NULL,
+  resolved_at   INTEGER,
+  resolved_by   TEXT,
+  FOREIGN KEY (source_id) REFERENCES sources(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_proposals_entity_status
+  ON proposals(entity, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_proposals_status_created
+  ON proposals(status, created_at DESC);
 `;
 
 export function db(): Database.Database {
@@ -111,6 +131,10 @@ export function newFactId(): string {
 export function newSourceId(title: string): string {
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   return `src_${slug}_${crypto.randomBytes(3).toString("hex")}`;
+}
+
+export function newProposalId(): string {
+  return "prop_" + crypto.randomBytes(8).toString("hex");
 }
 
 export function insertSource(s: Source): void {
@@ -219,6 +243,164 @@ export function listSources(): Source[] {
     raw_excerpt: r.raw_excerpt,
     source_prior: r.source_prior,
   }));
+}
+
+// ── Proposals (FR-18) ──────────────────────────────────────────────────────
+
+export type ProposalKind = "add" | "supersede" | "reject";
+export type ProposalStatus = "pending" | "approved" | "rejected" | "superseded";
+
+export type Proposal = {
+  id: string;
+  entity: string;
+  source_id: string | null;
+  kind: ProposalKind;
+  payload: ProposalPayload;
+  rationale: string | null;
+  status: ProposalStatus;
+  created_at: number;
+  resolved_at: number | null;
+  resolved_by: string | null;
+};
+
+/**
+ * The shape of a proposal's payload depends on its kind.
+ * - "add":       describes a new fact to insert.
+ * - "supersede": same as "add", but also closes `supersedes` (existing fact id).
+ * - "reject":    marks `rejects` (an existing source id) as untrusted; no fact is written.
+ */
+export type ProposalPayload = {
+  predicate?: string;
+  value?: FactValue;
+  unit?: string;
+  valid_from?: string | null;
+  valid_to?: string | null;
+  span?: { start: number; end: number; quote: string };
+  confidence?: number;
+  /** Existing fact id this proposal supersedes (kind="supersede"). */
+  supersedes?: string;
+  /** Existing source id this proposal rejects (kind="reject"). */
+  rejects?: string;
+};
+
+type RawProposal = {
+  id: string;
+  entity: string;
+  source_id: string | null;
+  kind: string;
+  payload_json: string;
+  rationale: string | null;
+  status: string;
+  created_at: number;
+  resolved_at: number | null;
+  resolved_by: string | null;
+};
+
+function rawToProposal(r: RawProposal): Proposal {
+  let payload: ProposalPayload = {};
+  try {
+    payload = JSON.parse(r.payload_json) as ProposalPayload;
+  } catch {
+    payload = {};
+  }
+  return {
+    id: r.id,
+    entity: r.entity,
+    source_id: r.source_id,
+    kind: r.kind as ProposalKind,
+    payload,
+    rationale: r.rationale,
+    status: r.status as ProposalStatus,
+    created_at: r.created_at,
+    resolved_at: r.resolved_at,
+    resolved_by: r.resolved_by,
+  };
+}
+
+export function insertProposal(p: {
+  id: string;
+  entity: string;
+  source_id?: string | null;
+  kind: ProposalKind;
+  payload: ProposalPayload;
+  rationale?: string | null;
+  resolved_by?: string | null;
+}): Proposal {
+  const row = {
+    id: p.id,
+    entity: p.entity,
+    source_id: p.source_id ?? null,
+    kind: p.kind,
+    payload_json: JSON.stringify(p.payload ?? {}),
+    rationale: p.rationale ?? null,
+    status: "pending",
+    created_at: Date.now(),
+    resolved_at: null as number | null,
+    resolved_by: p.resolved_by ?? null,
+  };
+  db()
+    .prepare(
+      `INSERT INTO proposals
+         (id, entity, source_id, kind, payload_json, rationale, status, created_at, resolved_at, resolved_by)
+       VALUES
+         (@id, @entity, @source_id, @kind, @payload_json, @rationale, @status, @created_at, @resolved_at, @resolved_by)`,
+    )
+    .run(row);
+  return rawToProposal(row as RawProposal);
+}
+
+export function getProposal(id: string): Proposal | null {
+  const row = db()
+    .prepare(`SELECT * FROM proposals WHERE id = @id`)
+    .get({ id }) as RawProposal | undefined;
+  return row ? rawToProposal(row) : null;
+}
+
+export function listProposals(opts: {
+  entity?: string;
+  status?: ProposalStatus;
+  limit?: number;
+} = {}): Proposal[] {
+  const limit = Math.min(Math.max(opts.limit ?? 50, 1), 500);
+  const clauses: string[] = [];
+  const args: Record<string, unknown> = { limit };
+  if (opts.entity) {
+    clauses.push("entity = @entity");
+    args.entity = opts.entity;
+  }
+  if (opts.status) {
+    clauses.push("status = @status");
+    args.status = opts.status;
+  }
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  const rows = db()
+    .prepare(
+      `SELECT * FROM proposals ${where} ORDER BY created_at DESC LIMIT @limit`,
+    )
+    .all(args) as RawProposal[];
+  return rows.map(rawToProposal);
+}
+
+export function updateProposalStatus(
+  id: string,
+  status: ProposalStatus,
+  resolvedBy: string,
+): Proposal | null {
+  db()
+    .prepare(
+      `UPDATE proposals
+         SET status = @status,
+             resolved_at = @resolved_at,
+             resolved_by = @resolved_by
+       WHERE id = @id AND status = 'pending'`,
+    )
+    .run({
+      id,
+      status,
+      resolved_at: Date.now(),
+      resolved_by: resolvedBy,
+    });
+  return getProposal(id);
 }
 
 export function listEvents(limit = 50): FactEvent[] {

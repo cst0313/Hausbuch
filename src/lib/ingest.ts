@@ -166,6 +166,8 @@ export async function ingest(input: IngestInput): Promise<IngestResult> {
     });
   }
 
+  // enrichment:after-reconcile -- Agent T inserts runEnrichments() here
+
   const latency_ms = Math.round(performance.now() - t0);
   emitEvent({ kind: "render.completed", entity: input.entity, fact_count: writtenFacts.length, latency_ms });
 

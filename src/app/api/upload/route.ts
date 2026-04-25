@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { ingest } from "@/lib/ingest";
 import type { SourceKind } from "@/lib/types";
 import { ENTITY } from "@/lib/seed";
+import { extractFromImage, GeminiError } from "@/lib/llm/gemini";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,11 +15,17 @@ export const dynamic = "force-dynamic";
  * Dispatches to the right extractor per file extension:
  *   .txt, .md       → read as UTF-8
  *   .eml            → strip RFC 822 headers, keep the body
- *   .pdf            → pdf-parse
+ *   .pdf            → pdf-parse; if it returns no usable text (scanned PDF),
+ *                     fall through to Gemini vision and label kind=image-ocr
+ *   .jpg/.jpeg/.png/.webp → Gemini vision (FR-24), kind=image-ocr
  *   others          → try UTF-8 decode as last resort
  *
  * Each file becomes a Source; the ingest pipeline extracts facts + reconciles.
  */
+
+/** PDFs shorter than this after pdf-parse are assumed to be scanned and re-routed to vision. */
+const SCANNED_PDF_THRESHOLD = 40;
+
 export async function POST(req: NextRequest) {
   db();
   const entity = (req.nextUrl.searchParams.get("entity") ?? ENTITY) as string;
@@ -36,18 +43,23 @@ export async function POST(req: NextRequest) {
     conflicts: number;
     latency_ms: number;
     extract_preview: string;
+    extractor?: string;
     error?: string;
   }> = [];
 
   for (const file of files) {
     try {
       const buf = Buffer.from(await file.arrayBuffer());
-      const { text, kind } = await extractText(file.name, buf);
+      const mime = (file.type || "").toLowerCase();
+      const { text, kind, extractor } = await extractText(file.name, mime, buf);
       const result = await ingest({
         entity,
         source: {
           kind,
-          title: file.name,
+          // Honest label (FR-11): when text came out of Gemini vision we mark
+          // the title so the proof-lens UI can show "extracted by Gemini vision".
+          title:
+            kind === "image-ocr" ? `${file.name} (extracted by Gemini vision)` : file.name,
           raw_excerpt: text.slice(0, 8192), // cap for demo
           source_prior: inferPrior(kind, file.name),
         },
@@ -60,6 +72,7 @@ export async function POST(req: NextRequest) {
         conflicts: result.conflicts.length,
         latency_ms: result.latency_ms,
         extract_preview: text.slice(0, 200),
+        extractor,
       });
     } catch (err) {
       results.push({
@@ -78,30 +91,80 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ entity, uploaded: results });
 }
 
-async function extractText(
-  filename: string,
-  buf: Buffer,
-): Promise<{ text: string; kind: SourceKind }> {
+type ExtractResult = { text: string; kind: SourceKind; extractor: string };
+
+async function extractText(filename: string, mime: string, buf: Buffer): Promise<ExtractResult> {
   const lower = filename.toLowerCase();
+
+  // Image inputs go straight to Gemini vision.
+  const isImageMime =
+    mime === "image/jpeg" ||
+    mime === "image/jpg" ||
+    mime === "image/png" ||
+    mime === "image/webp";
+  const isImageExt = /\.(jpe?g|png|webp)$/i.test(lower);
+  if (isImageMime || isImageExt) {
+    const text = await visionExtract(buf, normalizeImageMime(mime, lower));
+    return { text, kind: "image-ocr", extractor: "gemini-vision" };
+  }
+
   if (lower.endsWith(".pdf")) {
-    const text = await extractPdfText(buf);
-    return { text, kind: "pdf" };
+    let pdfText = "";
+    try {
+      pdfText = await extractPdfText(buf);
+    } catch {
+      pdfText = "";
+    }
+    // If pdf-parse came back empty / near-empty, treat the PDF as scanned and
+    // hand it to Gemini vision. Vision on PDFs works on flash; we feed the
+    // PDF bytes through the inlineData path with mime=application/pdf.
+    if (pdfText.trim().length < SCANNED_PDF_THRESHOLD) {
+      try {
+        const text = await visionExtract(buf, "application/pdf");
+        return { text, kind: "image-ocr", extractor: "gemini-vision" };
+      } catch (err) {
+        // Vision failed too — surface what pdf-parse gave us, even if empty.
+        // Better to record an empty source than to lose the upload entirely.
+        if (err instanceof GeminiError && err.kind === "missing-key") {
+          // Honest label: vision unavailable, falling back to whatever pdf-parse produced.
+          return { text: pdfText, kind: "pdf", extractor: "pdf-parse-fallback" };
+        }
+        return { text: pdfText, kind: "pdf", extractor: "pdf-parse-fallback" };
+      }
+    }
+    return { text: pdfText, kind: "pdf", extractor: "pdf-parse" };
   }
   if (lower.endsWith(".eml")) {
     const body = parseEml(buf.toString("utf8"));
-    return { text: body, kind: "email" };
+    return { text: body, kind: "email", extractor: "eml" };
   }
   if (lower.endsWith(".md")) {
-    return { text: buf.toString("utf8"), kind: "note" };
+    return { text: buf.toString("utf8"), kind: "note", extractor: "utf8" };
   }
   if (lower.endsWith(".txt")) {
-    return { text: buf.toString("utf8"), kind: "note" };
+    return { text: buf.toString("utf8"), kind: "note", extractor: "utf8" };
   }
   if (lower.endsWith(".json") || lower.endsWith(".jsonl")) {
-    return { text: buf.toString("utf8"), kind: "erp" };
+    return { text: buf.toString("utf8"), kind: "erp", extractor: "utf8" };
   }
   // Last-resort: try UTF-8
-  return { text: buf.toString("utf8"), kind: "note" };
+  return { text: buf.toString("utf8"), kind: "note", extractor: "utf8" };
+}
+
+async function visionExtract(buf: Buffer, mime: string): Promise<string> {
+  const out = await extractFromImage({ bytes: buf, mime });
+  return out.text;
+}
+
+function normalizeImageMime(mime: string, filename: string): string {
+  if (mime && mime.startsWith("image/")) {
+    if (mime === "image/jpg") return "image/jpeg";
+    return mime;
+  }
+  if (/\.(jpe?g)$/i.test(filename)) return "image/jpeg";
+  if (/\.png$/i.test(filename)) return "image/png";
+  if (/\.webp$/i.test(filename)) return "image/webp";
+  return "image/jpeg";
 }
 
 async function extractPdfText(buf: Buffer): Promise<string> {
@@ -152,12 +215,14 @@ function parseEml(raw: string): string {
 }
 
 function inferPrior(kind: SourceKind, name: string): number {
-  // Rough heuristic: courts/statutes > operator records > emails > casual notes
+  // Rough heuristic: courts/statutes > operator records > emails > casual notes.
+  // image-ocr lands a notch below pdf because the OCR layer adds error.
   if (kind === "legal") return 0.94;
   if (/legal|memo|law|court|statute/i.test(name)) return 0.9;
   if (kind === "pdf") return 0.9;
   if (kind === "erp") return 0.9;
   if (kind === "zendesk") return 0.85;
+  if (kind === "image-ocr") return 0.82;
   if (kind === "slack") return 0.8;
   if (kind === "email") return 0.65;
   if (kind === "note") return 0.6;

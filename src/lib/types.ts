@@ -21,7 +21,9 @@ export type SourceKind =
   | "note"
   | "db"
   | "legal"
-  | "zendesk";
+  | "zendesk"
+  /** Text was extracted from an image or scanned PDF via Gemini vision (FR-24). */
+  | "image-ocr";
 
 export type Source = {
   id: SourceId;

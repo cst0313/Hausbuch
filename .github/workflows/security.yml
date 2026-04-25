@@ -1,0 +1,37 @@
+# Local belt-and-braces security check.
+#
+# The real, continuous security scan for this repo is Aikido (SaaS),
+# linked to the GitHub repo and running on every push to main.
+# See docs/security.md for scope, disclosure policy, and the latest scan
+# screenshot. This workflow is a small in-repo backstop: it runs npm audit
+# on production dependencies and fails the build on high or critical
+# advisories so a PR cannot quietly land a known-vulnerable dep between
+# Aikido scans. It is not a substitute for Aikido.
+
+name: security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  npm-audit:
+    name: npm audit (production, high+)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high

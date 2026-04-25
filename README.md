@@ -1,5 +1,8 @@
 # Hausbuch
 
+<!-- Update <ORG>/<REPO> below to the actual Aikido org/repo path after the first scan completes. -->
+[![Aikido Security](https://app.aikido.dev/badges/<ORG>/<REPO>/main.svg)](https://app.aikido.dev)
+
 > A context engine for property management. One living, self-updating, citation-backed `Context.md` per building.
 
 **Status**: hackathon preview · Big Berlin Hack · Buena track
@@ -37,6 +40,12 @@ Seeds automatically on first request.
 - **Tavily** — live enrichment (Mietpreisbremse caps by ZIP, Handelsregister, contractor registry)
 - **Gradium** — voice layer: "call your building"
 - **Aikido** — security scanning (see `docs/security.md`)
+
+## Security
+
+Continuously scanned by Aikido on every push to `main`. See
+[`docs/security.md`](docs/security.md) for scope, disclosure policy,
+threat model, and known risks in the hackathon build.
 
 ## License
 

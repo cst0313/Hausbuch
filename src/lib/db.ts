@@ -96,6 +96,20 @@ CREATE INDEX IF NOT EXISTS idx_proposals_entity_status
   ON proposals(entity, status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_proposals_status_created
   ON proposals(status, created_at DESC);
+
+-- Agent T (FR-25): cache for live Tavily enrichments. 24h TTL enforced by
+-- expires_at column — reads ignore expired rows.
+CREATE TABLE IF NOT EXISTS enrichment_cache (
+  cache_key      TEXT PRIMARY KEY,        -- "<enrichment_kind>|<normalized_input>"
+  enrichment_kind TEXT NOT NULL,          -- e.g. "mietpreisbremse_cap"
+  input_norm     TEXT NOT NULL,           -- normalized input (zip, slugged company, etc.)
+  payload_json   TEXT NOT NULL,           -- serialized enrichment result
+  fetched_at     TEXT NOT NULL,           -- ISO timestamp of the live lookup
+  expires_at     TEXT NOT NULL            -- ISO timestamp; reads ignore rows past this
+);
+
+CREATE INDEX IF NOT EXISTS idx_enrichment_kind    ON enrichment_cache(enrichment_kind);
+CREATE INDEX IF NOT EXISTS idx_enrichment_expires ON enrichment_cache(expires_at);
 `;
 
 export function db(): Database.Database {
@@ -401,6 +415,58 @@ export function updateProposalStatus(
       resolved_by: resolvedBy,
     });
   return getProposal(id);
+}
+
+// ── Enrichment cache (FR-25) ────────────────────────────────────────────────
+// Used by src/lib/enrich.ts to keep Tavily lookups polite (24h TTL).
+
+export type EnrichmentCacheRow = {
+  cache_key: string;
+  enrichment_kind: string;
+  input_norm: string;
+  payload_json: string;
+  fetched_at: string;
+  expires_at: string;
+};
+
+export function getEnrichmentCache(
+  kind: string,
+  inputNorm: string,
+): EnrichmentCacheRow | null {
+  const cacheKey = `${kind}|${inputNorm}`;
+  const row = db()
+    .prepare(
+      `SELECT * FROM enrichment_cache
+       WHERE cache_key = @cache_key AND expires_at > @now`,
+    )
+    .get({ cache_key: cacheKey, now: new Date().toISOString() }) as
+    | EnrichmentCacheRow
+    | undefined;
+  return row ?? null;
+}
+
+export function setEnrichmentCache(
+  kind: string,
+  inputNorm: string,
+  payload: unknown,
+  ttlMs = 24 * 60 * 60 * 1000,
+): void {
+  const cacheKey = `${kind}|${inputNorm}`;
+  const now = new Date();
+  db()
+    .prepare(
+      `INSERT OR REPLACE INTO enrichment_cache
+         (cache_key, enrichment_kind, input_norm, payload_json, fetched_at, expires_at)
+       VALUES (@cache_key, @kind, @input_norm, @payload_json, @fetched_at, @expires_at)`,
+    )
+    .run({
+      cache_key: cacheKey,
+      kind,
+      input_norm: inputNorm,
+      payload_json: JSON.stringify(payload),
+      fetched_at: now.toISOString(),
+      expires_at: new Date(now.getTime() + ttlMs).toISOString(),
+    });
 }
 
 export function listEvents(limit = 50): FactEvent[] {

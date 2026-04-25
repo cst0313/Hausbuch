@@ -15,6 +15,7 @@ import { groupByOverlap, computePosterior } from "./reconciler";
 import { emitEvent } from "./events";
 import { normalizePredicate } from "./normalize";
 import { judgeRelevance, type RelevanceDecision } from "./relevance";
+import { runEnrichments } from "./enrich";
 
 export type IngestInput = {
   entity: string;
@@ -166,7 +167,16 @@ export async function ingest(input: IngestInput): Promise<IngestResult> {
     });
   }
 
-  // enrichment:after-reconcile -- Agent T inserts runEnrichments() here
+  // enrichment:after-reconcile
+  // Tavily live enrichment (FR-25) — fires Mietpreisbremse-cap, Handelsregister
+  // owner-verify, and contractor active-status lookups in parallel. Each call
+  // has a 6s hard timeout and 24h cache; failures are swallowed (logged).
+  try {
+    const enrichmentFacts = await runEnrichments(writtenFacts, input.entity);
+    for (const ef of enrichmentFacts) writtenFacts.push(ef);
+  } catch (err) {
+    console.warn(`[ingest] enrichment phase failed: ${String(err)}`);
+  }
 
   const latency_ms = Math.round(performance.now() - t0);
   emitEvent({ kind: "render.completed", entity: input.entity, fact_count: writtenFacts.length, latency_ms });

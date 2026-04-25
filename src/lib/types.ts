@@ -23,7 +23,9 @@ export type SourceKind =
   | "legal"
   | "zendesk"
   /** Text was extracted from an image or scanned PDF via Gemini vision (FR-24). */
-  | "image-ocr";
+  | "image-ocr"
+  /** Live enrichment fetched from Tavily (FR-25). */
+  | "tavily";
 
 export type Source = {
   id: SourceId;

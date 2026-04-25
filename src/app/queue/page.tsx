@@ -1,40 +1,109 @@
 // path: src/app/queue/page.tsx
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Nav } from "@/components/Nav";
 import { useLocale } from "@/components/LocaleProvider";
 
-type Patch = {
-  op: "add" | "supersede" | "reject";
-  predicate: string;
-  value: string;
+// Mirrors src/lib/db.ts ProposalKind / ProposalStatus / ProposalPayload.
+type ProposalKind = "add" | "supersede" | "reject";
+type ProposalStatus = "pending" | "approved" | "rejected" | "superseded";
+
+type ProposalPayload = {
+  predicate?: string;
+  value?: string | number | boolean | null;
+  unit?: string;
+  valid_from?: string | null;
+  valid_to?: string | null;
+  span?: { start: number; end: number; quote: string };
+  confidence?: number;
   supersedes?: string;
-  confidence: number;
+  rejects?: string;
 };
 
-type QueueItem = {
+type Proposal = {
   id: string;
-  title: string;
-  source: string;
-  received: string;
-  excerpt: string;
   entity: string;
-  entityLabel: string;
-  patches: Patch[];
+  source_id: string | null;
+  kind: ProposalKind;
+  payload: ProposalPayload;
+  rationale: string | null;
+  status: ProposalStatus;
+  created_at: number;
+  resolved_at: number | null;
+  resolved_by: string | null;
 };
+
+type LocalStatus = "approved" | "rejected" | "pending-act";
 
 export default function QueuePage() {
   const { t } = useLocale();
-  const [items, setItems] = useState<QueueItem[]>(seed);
-  const [status, setStatus] = useState<Record<string, "approved" | "rejected" | undefined>>({});
+  const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [actStatus, setActStatus] = useState<Record<string, LocalStatus>>({});
+  const [actError, setActError] = useState<Record<string, string>>({});
 
-  const act = (id: string, kind: "approved" | "rejected") => {
-    setStatus((s) => ({ ...s, [id]: kind }));
-    // Real wiring (POST /api/ingest or /api/queue/:id/approve) lands in Phase 2.
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/queue?status=pending&limit=100", {
+        cache: "no-store",
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = (await res.json()) as { proposals: Proposal[] };
+      setProposals(data.proposals ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const act = async (id: string, action: "approve" | "reject") => {
+    setActStatus((s) => ({ ...s, [id]: "pending-act" }));
+    setActError((e) => {
+      const next = { ...e };
+      delete next[id];
+      return next;
+    });
+    try {
+      const res = await fetch(`/api/queue/${encodeURIComponent(id)}/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resolved_by: "demo-user" }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error ?? `HTTP ${res.status}`);
+      }
+      setActStatus((s) => ({
+        ...s,
+        [id]: action === "approve" ? "approved" : "rejected",
+      }));
+    } catch (err) {
+      setActError((e) => ({
+        ...e,
+        [id]: err instanceof Error ? err.message : String(err),
+      }));
+      setActStatus((s) => {
+        const next = { ...s };
+        delete next[id];
+        return next;
+      });
+    }
   };
 
-  const remaining = items.filter((it) => !status[it.id]);
+  const handled = proposals.filter((p) => {
+    const s = actStatus[p.id];
+    return s === "approved" || s === "rejected";
+  }).length;
+  const pending = proposals.length - handled;
 
   return (
     <>
@@ -61,20 +130,34 @@ export default function QueuePage() {
             className="text-right text-[12px] font-mono shrink-0"
             style={{ color: "var(--fg-dim)" }}
           >
-            <div>{remaining.length} pending</div>
-            <div className="mt-0.5">{items.length - remaining.length} handled</div>
+            <div>{pending} pending</div>
+            <div className="mt-0.5">{handled} handled</div>
           </div>
         </header>
 
-        {remaining.length === 0 ? (
+        {loading ? (
+          <p style={{ color: "var(--fg-muted)" }}>{t("common.loading")}</p>
+        ) : error ? (
+          <div
+            className="rounded-md p-4 text-[13px]"
+            style={{
+              border: "1px solid var(--border-muted)",
+              color: "var(--danger)",
+              background: "var(--bg-elevated)",
+            }}
+          >
+            {t("common.error")} — {error}
+          </div>
+        ) : proposals.length === 0 ? (
           <p style={{ color: "var(--fg-muted)" }}>{t("common.empty")}</p>
         ) : (
           <div className="space-y-4">
-            {items.map((item) => (
-              <QueueCard
-                key={item.id}
-                item={item}
-                status={status[item.id]}
+            {proposals.map((p) => (
+              <ProposalCard
+                key={p.id}
+                proposal={p}
+                status={actStatus[p.id]}
+                error={actError[p.id]}
                 onAct={act}
               />
             ))}
@@ -85,17 +168,26 @@ export default function QueuePage() {
   );
 }
 
-function QueueCard({
-  item,
+function ProposalCard({
+  proposal,
   status,
+  error,
   onAct,
 }: {
-  item: QueueItem;
-  status: "approved" | "rejected" | undefined;
-  onAct: (id: string, kind: "approved" | "rejected") => void;
+  proposal: Proposal;
+  status: LocalStatus | undefined;
+  error: string | undefined;
+  onAct: (id: string, action: "approve" | "reject") => void;
 }) {
   const { t } = useLocale();
   const [expanded, setExpanded] = useState(false);
+  const finished = status === "approved" || status === "rejected";
+  const acting = status === "pending-act";
+
+  const headline = headlineFor(proposal);
+  const sourceLabel = proposal.source_id ?? "manual proposal";
+  const received = formatTimestamp(proposal.created_at);
+  const excerpt = proposal.payload.span?.quote ?? proposal.rationale ?? "";
 
   return (
     <article
@@ -103,7 +195,7 @@ function QueueCard({
       style={{
         borderColor: "var(--border)",
         background: "var(--bg-elevated)",
-        opacity: status ? 0.5 : 1,
+        opacity: finished ? 0.5 : 1,
       }}
     >
       {/* Header */}
@@ -114,30 +206,42 @@ function QueueCard({
               className="text-[11px] font-mono uppercase tracking-wider"
               style={{ color: "var(--fg-dim)" }}
             >
-              {item.source}
+              {sourceLabel}
             </span>
             <span
               className="text-[11px] font-mono"
               style={{ color: "var(--fg-dim)" }}
             >
-              · {item.received}
+              · {received}
             </span>
+            {proposal.rationale && (
+              <span
+                className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded"
+                style={{
+                  background: "var(--bg-hover)",
+                  color: "var(--fg-muted)",
+                }}
+                title="why this is in the queue (not auto-accepted)"
+              >
+                {proposal.rationale}
+              </span>
+            )}
           </div>
           <h3
             className="text-[16px] font-semibold tracking-tight"
             style={{ color: "var(--fg)", letterSpacing: "-0.01em" }}
           >
-            {item.title}
+            {headline}
           </h3>
           <p
             className="mt-1 text-[12px] font-mono"
             style={{ color: "var(--fg-dim)" }}
           >
-            → {item.entityLabel}
+            → {proposal.entity}
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {status ? (
+          {finished ? (
             <span
               className="text-[11px] font-mono uppercase tracking-wider px-2 py-1 rounded-full"
               style={{
@@ -153,19 +257,21 @@ function QueueCard({
             <>
               <button
                 type="button"
-                onClick={() => onAct(item.id, "approved")}
-                className="h-9 px-4 rounded-md text-[13px] font-medium transition-all"
+                disabled={acting}
+                onClick={() => onAct(proposal.id, "approve")}
+                className="h-9 px-4 rounded-md text-[13px] font-medium transition-all disabled:opacity-60"
                 style={{
                   background: "var(--brand)",
                   color: "#fff",
                 }}
               >
-                {t("queue.approve")}
+                {acting ? t("common.loading") : t("queue.approve")}
               </button>
               <button
                 type="button"
-                onClick={() => onAct(item.id, "rejected")}
-                className="h-9 px-3 rounded-md text-[13px] transition-colors"
+                disabled={acting}
+                onClick={() => onAct(proposal.id, "reject")}
+                className="h-9 px-3 rounded-md text-[13px] transition-colors disabled:opacity-60"
                 style={{
                   border: "1px solid var(--border-muted)",
                   color: "var(--fg)",
@@ -179,22 +285,34 @@ function QueueCard({
       </div>
 
       {/* Excerpt */}
-      <div
-        className="px-5 pb-5 text-[13px] leading-relaxed"
-        style={{ color: "var(--fg-muted)" }}
-      >
-        <blockquote
-          className="italic pl-3 border-l"
-          style={{
-            borderColor: "var(--border-muted)",
-            fontFamily: "var(--font-serif)",
-          }}
+      {excerpt && (
+        <div
+          className="px-5 pb-5 text-[13px] leading-relaxed"
+          style={{ color: "var(--fg-muted)" }}
         >
-          {item.excerpt}
-        </blockquote>
-      </div>
+          <blockquote
+            className="italic pl-3 border-l"
+            style={{
+              borderColor: "var(--border-muted)",
+              fontFamily: "var(--font-serif)",
+            }}
+          >
+            {excerpt}
+          </blockquote>
+        </div>
+      )}
 
-      {/* Proposed patches */}
+      {/* Error from last action attempt */}
+      {error && (
+        <div
+          className="px-5 pb-3 text-[12px]"
+          style={{ color: "var(--danger)" }}
+        >
+          {t("common.error")} — {error}
+        </div>
+      )}
+
+      {/* Proposed patch */}
       <div
         className="border-t"
         style={{ borderColor: "var(--border)", background: "var(--bg)" }}
@@ -205,10 +323,7 @@ function QueueCard({
           className="w-full px-5 py-3 flex items-center justify-between text-[12px] font-mono"
           style={{ color: "var(--fg-muted)" }}
         >
-          <span>
-            {item.patches.length} proposed{" "}
-            {item.patches.length === 1 ? "change" : "changes"}
-          </span>
+          <span>1 proposed change</span>
           <span style={{ color: "var(--fg-dim)" }}>{expanded ? "−" : "+"}</span>
         </button>
         {expanded && (
@@ -216,54 +331,74 @@ function QueueCard({
             className="px-5 pb-5 space-y-2 text-[13px]"
             style={{ borderTop: "1px solid var(--border)" }}
           >
-            {item.patches.map((p, i) => (
-              <li key={i} className="flex items-start gap-3 pt-3">
-                <span
-                  className="shrink-0 text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded"
-                  style={{
-                    background:
-                      p.op === "add"
-                        ? "var(--brand-wash)"
-                        : p.op === "supersede"
-                          ? "rgba(180, 83, 9, 0.18)"
-                          : "rgba(153, 27, 27, 0.18)",
-                    color:
-                      p.op === "add"
-                        ? "var(--brand-tint)"
-                        : p.op === "supersede"
-                          ? "var(--warning)"
-                          : "var(--danger)",
-                  }}
-                >
-                  {p.op}
-                </span>
-                <div className="flex-1 min-w-0">
+            <li className="flex items-start gap-3 pt-3">
+              <span
+                className="shrink-0 text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded"
+                style={{
+                  background:
+                    proposal.kind === "add"
+                      ? "var(--brand-wash)"
+                      : proposal.kind === "supersede"
+                        ? "rgba(180, 83, 9, 0.18)"
+                        : "rgba(153, 27, 27, 0.18)",
+                  color:
+                    proposal.kind === "add"
+                      ? "var(--brand-tint)"
+                      : proposal.kind === "supersede"
+                        ? "var(--warning)"
+                        : "var(--danger)",
+                }}
+              >
+                {proposal.kind}
+              </span>
+              <div className="flex-1 min-w-0">
+                {proposal.kind === "reject" ? (
                   <div>
                     <span
                       className="font-mono text-[11px] mr-2"
                       style={{ color: "var(--fg-dim)" }}
                     >
-                      {p.predicate}
+                      reject source
                     </span>
-                    <span style={{ color: "var(--fg)" }}>{p.value}</span>
+                    <span style={{ color: "var(--fg)" }}>
+                      {proposal.payload.rejects ?? "—"}
+                    </span>
                   </div>
-                  {p.supersedes && (
-                    <div
-                      className="mt-0.5 text-[11px] font-mono line-through"
-                      style={{ color: "var(--fg-dim)" }}
-                    >
-                      was: {p.supersedes}
+                ) : (
+                  <>
+                    <div>
+                      <span
+                        className="font-mono text-[11px] mr-2"
+                        style={{ color: "var(--fg-dim)" }}
+                      >
+                        {proposal.payload.predicate ?? "—"}
+                      </span>
+                      <span style={{ color: "var(--fg)" }}>
+                        {formatValue(proposal.payload.value)}
+                        {proposal.payload.unit ? ` ${proposal.payload.unit}` : ""}
+                      </span>
                     </div>
-                  )}
-                </div>
+                    {proposal.kind === "supersede" && proposal.payload.supersedes && (
+                      <div
+                        className="mt-0.5 text-[11px] font-mono line-through"
+                        style={{ color: "var(--fg-dim)" }}
+                      >
+                        was: fact {proposal.payload.supersedes}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+              {typeof proposal.payload.confidence === "number" && (
                 <span
                   className="shrink-0 text-[11px] font-mono"
-                  style={{ color: "var(--fg-dim)" }}
+                  style={{ color: "var(--fg-dim) " }}
+                  title="extractor confidence — labels below 0.7 are commonly low-confidence"
                 >
-                  {Math.round(p.confidence * 100)}%
+                  {Math.round(proposal.payload.confidence * 100)}% conf.
                 </span>
-              </li>
-            ))}
+              )}
+            </li>
           </ul>
         )}
       </div>
@@ -271,67 +406,26 @@ function QueueCard({
   );
 }
 
-// Placeholder queue — wires to /api/queue in Phase 2.
-const seed: QueueItem[] = [
-  {
-    id: "q-001",
-    title: "Ab 1. Juni 2026 wird die monatliche Miete auf 1.800 EUR erhöht.",
-    source: "email · landlord@müller.de",
-    received: "2026-04-18 09:12 UTC",
-    entity: "property:berliner-str-42",
-    entityLabel: "Berliner Str. 42 · Apt 3",
-    excerpt:
-      "Sehr geehrte Frau Schmidt, hiermit teile ich Ihnen mit, dass ab dem 1. Juni 2026 die monatliche Miete für Apt 3 auf 1.800 EUR erhöht wird.",
-    patches: [
-      {
-        op: "add",
-        predicate: "tenancy.rent.next",
-        value: "€1,800 / mo effective 2026-06-01",
-        confidence: 0.82,
-      },
-    ],
-  },
-  {
-    id: "q-002",
-    title: "Legal memo: Mietpreisbremse cap at €1,650",
-    source: "upload · legal-memo-2026.pdf",
-    received: "2026-04-20 14:22 UTC",
-    entity: "property:berliner-str-42",
-    entityLabel: "Berliner Str. 42 · Apt 3",
-    excerpt:
-      "Based on the Mietpreisbremse § 556d BGB, the maximum permissible rent for this property is €1,650 per month.",
-    patches: [
-      {
-        op: "add",
-        predicate: "tenancy.rent.next",
-        value: "€1,650 / mo effective 2026-06-01 (statutory cap)",
-        confidence: 0.94,
-      },
-    ],
-  },
-  {
-    id: "q-003",
-    title: "Leckage im Dachgeschoss — Wohnung 6",
-    source: "zendesk · T-2210",
-    received: "2026-04-22 08:04 UTC",
-    entity: "property:berliner-str-42",
-    entityLabel: "Berliner Str. 42 · Apt 6",
-    excerpt:
-      "Tenant reports water damage along the living-room ceiling. Maintenance contractor has been notified; awaiting site visit.",
-    patches: [
-      {
-        op: "add",
-        predicate: "condition.open_tickets",
-        value: "1 open · Apt 6 · ceiling leak",
-        confidence: 0.91,
-      },
-      {
-        op: "supersede",
-        predicate: "condition.last_inspection",
-        value: "2026-04-22 (partial, Apt 6)",
-        supersedes: "2026-02-14 (full building)",
-        confidence: 0.45,
-      },
-    ],
-  },
-];
+function headlineFor(p: Proposal): string {
+  if (p.kind === "reject") {
+    return `Reject source ${p.payload.rejects ?? "(unknown)"}`;
+  }
+  const pred = p.payload.predicate ?? "(unknown predicate)";
+  const val = formatValue(p.payload.value);
+  const verb = p.kind === "supersede" ? "Supersede" : "Add";
+  return `${verb} ${pred} = ${val}`;
+}
+
+function formatValue(v: ProposalPayload["value"]): string {
+  if (v === null || v === undefined) return "(empty)";
+  return String(v);
+}
+
+function formatTimestamp(ms: number): string {
+  if (!Number.isFinite(ms)) return "—";
+  try {
+    return new Date(ms).toISOString().replace("T", " ").replace(/\..+$/, " UTC");
+  } catch {
+    return "—";
+  }
+}

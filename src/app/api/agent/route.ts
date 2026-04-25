@@ -24,6 +24,7 @@ export async function POST(req: NextRequest) {
   const input: AgentInput = {
     message: message.trim(),
     entity_id: body.entity_id ?? undefined,
+    language: body.language ?? undefined,
     conversation_history: body.history ?? undefined,
   };
 

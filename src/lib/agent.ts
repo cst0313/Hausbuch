@@ -49,6 +49,7 @@ export type AgentResponse = {
 export type AgentInput = {
   message: string;
   entity_id?: string;
+  language?: "de" | "en";
   conversation_history?: Array<{ role: "user" | "agent"; text: string }>;
 };
 
@@ -64,7 +65,10 @@ export async function runAgent(input: AgentInput): Promise<AgentResponse> {
   };
 
   // ── Step 1: Understand the query ──────────────────────────────────
-  step("thinking", `Analysiere Anfrage: "${input.message.slice(0, 100)}"`);
+  const en = input.language === "en";
+  step("thinking", en
+    ? `Analyzing query: "${input.message.slice(0, 100)}"`
+    : `Analysiere Anfrage: "${input.message.slice(0, 100)}"`);
 
   // Determine which entities are relevant
   const targetEntity = input.entity_id ? getEntity(input.entity_id) : null;
@@ -79,7 +83,9 @@ export async function runAgent(input: AgentInput): Promise<AgentResponse> {
   for (const e of relatedEntities) entitiesAccessed.push(e.id);
 
   // ── Step 2: Gather context ────────────────────────────────────────
-  step("searching", `Durchsuche ${relatedEntities.length} Entitäten nach relevanten Fakten...`);
+  step("searching", en
+    ? `Searching ${relatedEntities.length} entities for relevant facts...`
+    : `Durchsuche ${relatedEntities.length} Entitäten nach relevanten Fakten...`);
 
   let contextParts: string[] = [];
   let totalFacts = 0;
@@ -99,7 +105,9 @@ export async function runAgent(input: AgentInput): Promise<AgentResponse> {
     entitiesAccessed.push("weg:immanuelkirchstr-26");
   }
 
-  step("analyzing", `${totalFacts} Fakten aus ${entitiesAccessed.length} Entitäten geladen.`);
+  step("analyzing", en
+    ? `${totalFacts} facts loaded from ${entitiesAccessed.length} entities.`
+    : `${totalFacts} Fakten aus ${entitiesAccessed.length} Entitäten geladen.`);
 
   // ── Step 3: Check for relevant recommendations ���───────────────────
   const allRecs = getRecommendations();
@@ -109,7 +117,9 @@ export async function runAgent(input: AgentInput): Promise<AgentResponse> {
   ).slice(0, 5);
 
   if (relevantRecs.length > 0) {
-    step("analyzing", `${relevantRecs.length} offene Vorgänge für diese Entitäten gefunden.`);
+    step("analyzing", en
+      ? `${relevantRecs.length} open incidents found for these entities.`
+      : `${relevantRecs.length} offene Vorgänge für diese Entitäten gefunden.`);
     contextParts.push("\n--- Offene Vorgänge ---");
     for (const rec of relevantRecs) {
       contextParts.push(`- [${rec.severity}] ${rec.title} — ${rec.entity_name}: ${rec.summary}`);
@@ -117,10 +127,10 @@ export async function runAgent(input: AgentInput): Promise<AgentResponse> {
   }
 
   // ── Step 4: Call Gemini for reasoning ───────────────────────��─────
-  step("answering", "Gemini analysiert den Kontext...");
+  step("answering", en ? "Gemini analyzing context..." : "Gemini analysiert den Kontext...");
 
   const contextMd = contextParts.join("\n\n");
-  const systemPrompt = buildSystemPrompt(input.conversation_history);
+  const systemPrompt = buildSystemPrompt(input.language, input.conversation_history);
 
   const geminiResult = await compose({
     prompt: input.message,
@@ -131,11 +141,15 @@ export async function runAgent(input: AgentInput): Promise<AgentResponse> {
   // ── Step 5: Generate suggestions ──────────────────────────────────
   const suggestions = generateSuggestions(input.message, relevantRecs, relatedEntities);
   if (suggestions.length > 0) {
-    step("suggesting", `${suggestions.length} empfohlene nächste Schritte.`);
+    step("suggesting", en
+      ? `${suggestions.length} recommended next steps.`
+      : `${suggestions.length} empfohlene nächste Schritte.`);
   }
 
   // ── Step 6: Learn from this query ─────────────────────────────────
-  step("learning", "Anfrage und Kontext für zukünftige Muster gespeichert.");
+  step("learning", en
+    ? "Query and context stored for future pattern learning."
+    : "Anfrage und Kontext für zukünftige Muster gespeichert.");
 
   // Record the interaction
   recordAction({
@@ -213,7 +227,23 @@ function findRelatedEntities(message: string, target: Entity | null): Entity[] {
 
 // ── System prompt ───────────────────────────────────────────────────────────
 
-function buildSystemPrompt(history?: Array<{ role: string; text: string }>): string {
+function buildSystemPrompt(language?: "de" | "en", history?: Array<{ role: string; text: string }>): string {
+  if (language === "en") {
+    return `You are the Hausbuch Agent — an AI assistant for property management company "Huber & Partner" (WEG Immanuelkirchstraße 26, Berlin 10405).
+
+Your tasks:
+- Answer questions about tenants, owners, units, incidents, and financials
+- ALWAYS cite the source after each claim: ^[source title]
+- If you are unsure, say so honestly
+- Suggest concrete next steps with timeframes
+- Answer in English
+- Keep answers concise (max 5 sentences for simple questions)
+- For complex incidents: explain the causal chain (e.g. water damage → mold → rent reduction)
+
+Context: You have access to all master data, emails, bank transactions, and incidents for this WEG.
+Today is ${new Date().toISOString().slice(0, 10)}.`;
+  }
+
   return `Du bist der Hausbuch-Agent — ein KI-Assistent für die Hausverwaltung "Huber & Partner" (WEG Immanuelkirchstraße 26, Berlin 10405).
 
 Deine Aufgaben:
@@ -221,7 +251,7 @@ Deine Aufgaben:
 - Zitiere IMMER die Quelle nach jeder Aussage: ^[Quelltitel]
 - Wenn du dir unsicher bist, sage es ehrlich
 - Schlage konkrete nächste Schritte vor
-- Antworte auf Deutsch, es sei denn der Benutzer schreibt auf Englisch
+- Antworte auf Deutsch
 - Halte Antworten kurz und präzise (max 5 Sätze für einfache Fragen)
 - Bei komplexen Vorgängen: erkläre den Zusammenhang (z.B. Schimmel → Wasserschaden → Mietminderung)
 

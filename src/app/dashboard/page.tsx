@@ -4,6 +4,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
 import { Nav } from "@/components/Nav";
+import { useLocale } from "@/components/LocaleProvider";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -35,6 +36,7 @@ type DraftResult = {
 // ── Page ────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
+  const { locale } = useLocale();
   const [entities, setEntities] = useState<Entity[]>([]);
   const [selectedEntity, setSelectedEntity] = useState<string>("");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -74,6 +76,7 @@ export default function DashboardPage() {
         body: JSON.stringify({
           message: text,
           entity_id: selectedEntity || undefined,
+          language: locale,
           history: messages.slice(-6).map(m => ({ role: m.role, text: m.text })),
         }),
       });
@@ -263,18 +266,18 @@ export default function DashboardPage() {
             {messages.length === 0 && (
               <div className="text-center py-16">
                 <p className="text-[15px] mb-2" style={{ color: "var(--fg-muted)" }}>
-                  Fragen Sie den Hausbuch-Agent
+                  {locale === "en" ? "Ask the Hausbuch Agent" : "Fragen Sie den Hausbuch-Agent"}
                 </p>
                 <div className="space-y-2 text-[13px]" style={{ color: "var(--fg-dim)" }}>
-                  <p>Beispiele:</p>
-                  <button onClick={() => { setInput("Was ist der aktuelle Stand bei der Schimmelmeldung in WE 32?"); }} className="block mx-auto px-4 py-2 rounded border text-left" style={{ borderColor: "var(--border)", background: "var(--bg-elevated)" }}>
-                    Was ist der Stand bei der Schimmelmeldung in WE 32?
+                  <p>{locale === "en" ? "Examples:" : "Beispiele:"}</p>
+                  <button onClick={() => { setInput(locale === "en" ? "What is the current status of the mold report in WE 32?" : "Was ist der aktuelle Stand bei der Schimmelmeldung in WE 32?"); }} className="block mx-auto px-4 py-2 rounded border text-left" style={{ borderColor: "var(--border)", background: "var(--bg-elevated)" }}>
+                    {locale === "en" ? "What is the status of the mold report in WE 32?" : "Was ist der Stand bei der Schimmelmeldung in WE 32?"}
                   </button>
-                  <button onClick={() => { setInput("Die Haustür von Haus 16 ist repariert. Handwerker Mueller war heute da."); }} className="block mx-auto px-4 py-2 rounded border text-left" style={{ borderColor: "var(--border)", background: "var(--bg-elevated)" }}>
-                    Haustür Haus 16 repariert. Mueller war heute da.
+                  <button onClick={() => { setInput(locale === "en" ? "The front door of Haus 16 is fixed. Handyman Mueller was here today." : "Die Haustür von Haus 16 ist repariert. Handwerker Mueller war heute da."); }} className="block mx-auto px-4 py-2 rounded border text-left" style={{ borderColor: "var(--border)", background: "var(--bg-elevated)" }}>
+                    {locale === "en" ? "Front door Haus 16 fixed. Mueller was here today." : "Haustür Haus 16 repariert. Mueller war heute da."}
                   </button>
-                  <button onClick={() => { setInput("Wer hat in den letzten 3 Monaten eine Kündigung eingereicht?"); }} className="block mx-auto px-4 py-2 rounded border text-left" style={{ borderColor: "var(--border)", background: "var(--bg-elevated)" }}>
-                    Wer hat kürzlich eine Kündigung eingereicht?
+                  <button onClick={() => { setInput(locale === "en" ? "Who has submitted a termination notice recently?" : "Wer hat in den letzten 3 Monaten eine Kündigung eingereicht?"); }} className="block mx-auto px-4 py-2 rounded border text-left" style={{ borderColor: "var(--border)", background: "var(--bg-elevated)" }}>
+                    {locale === "en" ? "Who submitted a termination notice recently?" : "Wer hat kürzlich eine Kündigung eingereicht?"}
                   </button>
                 </div>
               </div>
@@ -343,7 +346,7 @@ export default function DashboardPage() {
               <div className="flex justify-start">
                 <div className="rounded-lg px-4 py-3" style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>
                   <div className="flex items-center gap-2 text-[12px]" style={{ color: "var(--fg-dim)" }}>
-                    <span className="animate-pulse">●</span> Agent denkt nach...
+                    <span className="animate-pulse">●</span> {locale === "en" ? "Agent thinking..." : "Agent denkt nach..."}
                   </div>
                 </div>
               </div>
@@ -374,7 +377,7 @@ export default function DashboardPage() {
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={e => e.key === "Enter" && !e.shiftKey && sendMessage()}
-                placeholder="Frage stellen oder Update eingeben..."
+                placeholder={locale === "en" ? "Ask a question or enter an update..." : "Frage stellen oder Update eingeben..."}
                 className="flex-1 px-4 py-2.5 rounded-lg text-[14px]"
                 style={{
                   background: "var(--bg-elevated)",
@@ -394,7 +397,7 @@ export default function DashboardPage() {
                   opacity: loading || !input.trim() ? 0.5 : 1,
                 }}
               >
-                Senden
+                {locale === "en" ? "Send" : "Senden"}
               </button>
             </div>
           </div>

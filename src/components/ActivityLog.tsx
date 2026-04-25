@@ -78,7 +78,7 @@ export function ActivityLog() {
             style={{ background: "var(--amber)" }}
           />
           <span className="font-mono text-[11px]" style={{ color: "var(--ink-muted)" }}>
-            lumen.system.activity · /api/stream
+            hausbuch.system.activity · /api/stream
           </span>
         </div>
         <span className="font-mono text-[10px]" style={{ color: "var(--ink-dim)" }}>

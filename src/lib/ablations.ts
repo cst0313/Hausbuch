@@ -17,7 +17,7 @@ export type Ablation =
 /**
  * View projection under ablation.
  *
- * - none:           identical to fullView (standard Lumen)
+ * - none:           identical to fullView (standard Hausbuch)
  * - bitemporality:  collapse all facts per predicate; latest known_from wins regardless of valid_time
  * - conflict:       same as none, but conflict groups are reduced to the single highest-confidence fact
  */

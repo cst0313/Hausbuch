@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Server-sent events stream of Lumen internal events. Browsers connect via
+ * Server-sent events stream of Hausbuch internal events. Browsers connect via
  * EventSource and render animations in response.
  */
 export async function GET(_req: NextRequest) {

@@ -1,6 +1,6 @@
 // path: src/app/demo/page.tsx
 import { Nav } from "@/components/Nav";
-import { LumenMark } from "@/components/LumenMark";
+import { HausbuchMark } from "@/components/LumenMark";
 import { DemoConsole } from "@/components/DemoConsole";
 
 export default function DemoPage() {
@@ -38,7 +38,7 @@ export default function DemoPage() {
         <footer className="max-w-7xl mx-auto px-6 py-10">
           <div className="hr-line mb-8" />
           <div className="flex justify-between items-center">
-            <LumenMark size={14} />
+            <HausbuchMark size={14} />
             <div className="text-[11px] font-mono" style={{ color: "var(--ink-dim)" }}>
               <a href="/research" className="hover:text-amber-bright transition-colors">
                 see the ablation study →

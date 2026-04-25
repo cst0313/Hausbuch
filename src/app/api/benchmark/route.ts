@@ -38,7 +38,7 @@ const QUESTIONS: BenchmarkQuestion[] = [
 type Ablation = "none" | "bitemporality" | "conflict" | "attribution" | "all";
 
 const ABLATIONS: Array<{ id: Ablation; label: string }> = [
-  { id: "none", label: "Lumen (full)" },
+  { id: "none", label: "Hausbuch (full)" },
   { id: "bitemporality", label: "– bitemporality" },
   { id: "conflict", label: "– Dawid-Skene" },
   { id: "attribution", label: "– citations" },
@@ -136,7 +136,7 @@ export async function GET(_req: NextRequest) {
 
 async function resetDb() {
   closeDb();
-  const DB_PATH = path.resolve(process.cwd(), "data", "lumen.db");
+  const DB_PATH = path.resolve(process.cwd(), "data", "hausbuch.db");
   for (const p of [DB_PATH, DB_PATH + "-wal", DB_PATH + "-shm"]) {
     try {
       if (fs.existsSync(p)) fs.unlinkSync(p);

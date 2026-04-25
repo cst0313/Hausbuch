@@ -22,6 +22,8 @@
  * No SDK dependency added — plain fetch is sufficient for the v1beta REST
  * surface and keeps the bundle small.
  */
+import { recordAction, estimateGeminiCost } from "../actions";
+
 const DEFAULT_MODEL = "gemini-2.5-flash";
 const TIMEOUT_MS = 20_000;
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta";
@@ -36,6 +38,8 @@ export type ComposeInput = {
    * pass it without a type error; not yet wired into the request body.
    */
   tools?: unknown;
+  /** Entity for action-log attribution (FR-7). */
+  meta?: { entity?: string };
 };
 
 export type ComposeOutput = {
@@ -52,6 +56,8 @@ export type ExtractFromImageInput = {
   mime: string;
   /** Optional override prompt. Defaults to a careful OCR + structure prompt. */
   prompt?: string;
+  /** Entity for action-log attribution (FR-7). */
+  meta?: { entity?: string };
 };
 
 export type ExtractFromImageOutput = {
@@ -220,6 +226,18 @@ export async function compose(input: ComposeInput): Promise<ComposeOutput> {
 
   logCall(latency_ms, tokens_in, tokens_out, model, "compose");
 
+  recordAction({
+    actor: "gemini",
+    action: "llm.compose",
+    entity: input.meta?.entity ?? null,
+    input: { prompt: input.prompt, context_length: input.context?.length ?? 0, model },
+    output: { text, tokens_in, tokens_out },
+    latency_ms,
+    cost_tokens: tokens_in + tokens_out,
+    cost_usd: estimateGeminiCost(tokens_in, tokens_out),
+    partner: "google-deepmind",
+  });
+
   return {
     text,
     tokens_in,
@@ -267,6 +285,18 @@ export async function extractFromImage(input: ExtractFromImageInput): Promise<Ex
   const tokens_out = resp.usageMetadata?.candidatesTokenCount ?? 0;
 
   logCall(latency_ms, tokens_in, tokens_out, model, "extractFromImage");
+
+  recordAction({
+    actor: "gemini",
+    action: "llm.extract",
+    entity: input.meta?.entity ?? null,
+    input: { mime: input.mime, byte_length: input.bytes.length, prompt: input.prompt ?? DEFAULT_OCR_PROMPT, model },
+    output: { text, tokens_in, tokens_out },
+    latency_ms,
+    cost_tokens: tokens_in + tokens_out,
+    cost_usd: estimateGeminiCost(tokens_in, tokens_out),
+    partner: "google-deepmind",
+  });
 
   return {
     text,

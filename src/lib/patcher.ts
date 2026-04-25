@@ -135,7 +135,7 @@ function upsertBlock(
     return { next: before + replacement + after, ok: true };
   }
   // Not found — insert before the trailer
-  const trailerIdx = doc.search(/<!-- Lumen · /);
+  const trailerIdx = doc.search(/<!-- Hausbuch · /);
   const payload = [open, ...block, close, ""].join("\n");
   if (trailerIdx !== -1) {
     return {
@@ -162,7 +162,7 @@ function removeBlock(
 }
 
 function replaceTrailer(doc: string, content: string): string {
-  const re = /<!-- Lumen · [^\n]*-->/;
+  const re = /<!-- Hausbuch · [^\n]*-->/;
   if (re.test(doc)) return doc.replace(re, content);
   return doc.trimEnd() + "\n" + content + "\n";
 }
@@ -183,9 +183,9 @@ function countUserLines(doc: string): number {
       inBlock = false;
       continue;
     }
-    // Also skip Lumen's own header / trailer
+    // Also skip Hausbuch's own header / trailer
     if (line.startsWith("# Context.md") || line.startsWith("> auto-generated") || line.startsWith("> bitemporal")) continue;
-    if (line.startsWith("<!-- Lumen ·")) continue;
+    if (line.startsWith("<!-- Hausbuch ·")) continue;
     if (line.startsWith("## ")) continue;
     if (line.trim() === "") continue;
     if (!inBlock) user++;

@@ -16,6 +16,7 @@ import { emitEvent } from "./events";
 import { normalizePredicate } from "./normalize";
 import { judgeRelevance, type RelevanceDecision } from "./relevance";
 import { runEnrichments } from "./enrich";
+import { recordAction } from "./actions";
 
 export type IngestInput = {
   entity: string;
@@ -66,6 +67,15 @@ export async function ingest(input: IngestInput): Promise<IngestResult> {
       reasons: relevance.reasons,
     });
     const latency_ms = Math.round(performance.now() - t0);
+    recordAction({
+      actor: "ingest",
+      action: "relevance.reject",
+      entity: input.entity,
+      target: source.id,
+      input: { kind: source.kind, title: source.title },
+      output: { score: relevance.score, reasons: relevance.reasons },
+      latency_ms,
+    });
     return {
       source,
       facts: [],
@@ -180,6 +190,16 @@ export async function ingest(input: IngestInput): Promise<IngestResult> {
 
   const latency_ms = Math.round(performance.now() - t0);
   emitEvent({ kind: "render.completed", entity: input.entity, fact_count: writtenFacts.length, latency_ms });
+
+  recordAction({
+    actor: "ingest",
+    action: "source.ingest",
+    entity: input.entity,
+    target: source.id,
+    input: { kind: source.kind, title: source.title, excerpt_length: source.raw_excerpt.length },
+    output: { inserted: writtenFacts.length, superseded, conflicts: conflictsOut.length, normalized: normalizationLog.length },
+    latency_ms,
+  });
 
   return {
     source,

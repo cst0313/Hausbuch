@@ -1,12 +1,12 @@
 // path: src/app/graph/page.tsx
 // path: src/app/graph/page.tsx
 import { Nav } from "@/components/Nav";
-import { LumenMark } from "@/components/LumenMark";
+import { HausbuchMark } from "@/components/HausbuchMark";
 import { GraphView } from "@/components/GraphView";
 import { VFSView } from "@/components/VFSView";
 
 export const metadata = {
-  title: "Lumen — graph & virtual file system",
+  title: "Hausbuch — graph & virtual file system",
   description:
     "Derived knowledge graph and virtual file system over the context base. " +
     "Satisfies the Qontext track's 'virtual file system + graph' requirement.",
@@ -29,7 +29,7 @@ export default function GraphPage() {
         </h1>
         <p className="text-[16px] leading-relaxed max-w-3xl" style={{ color: "var(--ink-muted)" }}>
           The Qontext track asks for a virtual file system plus graph that makes the company
-          legible to machines and humans. Lumen derives both from the fact store at read time —
+          legible to machines and humans. Hausbuch derives both from the fact store at read time —
           no separate graph DB, no schema maintenance, no drift. An edge exists because a fact
           says so. When the fact is superseded, the edge disappears.
         </p>
@@ -110,7 +110,7 @@ const ENTITY_PREDICATES = [
       <footer className="max-w-6xl mx-auto px-6 py-10 mt-8">
         <div className="hr-line mb-8" />
         <div className="flex justify-between items-center">
-          <LumenMark size={14} />
+          <HausbuchMark size={14} />
           <div className="flex gap-4 text-[11px] font-mono" style={{ color: "var(--ink-dim)" }}>
             <a href="/demo" className="hover:text-amber-bright transition-colors">/demo</a>
             <a href="/research" className="hover:text-amber-bright transition-colors">/research</a>

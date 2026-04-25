@@ -1,11 +1,11 @@
 // path: src/app/technical/page.tsx
 import { Nav } from "@/components/Nav";
-import { LumenMark } from "@/components/LumenMark";
+import { HausbuchMark } from "@/components/HausbuchMark";
 
 export const metadata = {
-  title: "Lumen — technical decisions",
+  title: "Hausbuch — technical decisions",
   description:
-    "A walkthrough of the engineering choices behind Lumen: storage model, bitemporality, Dawid-Skene reconciliation, citations, cache-engineered rendering, and the RAG vs long-context comparison.",
+    "A walkthrough of the engineering choices behind Hausbuch: storage model, bitemporality, Dawid-Skene reconciliation, citations, cache-engineered rendering, and the RAG vs long-context comparison.",
 };
 
 export default function TechnicalPage() {
@@ -61,7 +61,7 @@ export default function TechnicalPage() {
                 ["bitemporal", "Bitemporality — two time axes"],
                 ["dawid-skene", "Conflict resolution — Dawid-Skene posterior"],
                 ["citations", "Citations — proof spans as first-class columns"],
-                ["baselines", "RAG vs long-context vs Lumen"],
+                ["baselines", "RAG vs long-context vs Hausbuch"],
                 ["cache", "Cache-engineered rendering"],
                 ["ablation", "Ablation methodology — real vs modeled"],
                 ["extractor", "Bilingual extractor"],
@@ -102,7 +102,7 @@ type Fact = {
   unit?: string;                  // "EUR/month"
   valid_from?: string | null;     // when this was true in the world
   valid_to?: string | null;
-  known_from: string;             // when Lumen learned it
+  known_from: string;             // when Hausbuch learned it
   known_to: string | null;
   source: SourceId;               // "src:lease-2024-03"
   span: { start, end, quote };    // verbatim text that grounds this
@@ -112,7 +112,7 @@ type Fact = {
 };`}
           </Code>
           <P>
-            <B>Consequence:</B> Lumen can reason about whether two facts disagree. RAG
+            <B>Consequence:</B> Hausbuch can reason about whether two facts disagree. RAG
             can&apos;t — it returns both chunks and hopes the model sorts it out. Every
             feature that follows — time-travel, Bayesian conflict resolution, citations,
             cache-engineering — depends on this choice.
@@ -133,13 +133,13 @@ type Fact = {
             These are different. The first is a <B>valid-time</B> query (ground truth in
             the world); the second is a <B>known-time</B> query (what the system believed
             at that moment). Bitemporal databases have kept the two separate since
-            Snodgrass (1999); Lumen does the same at the fact level:
+            Snodgrass (1999); Hausbuch does the same at the fact level:
           </P>
           <Code>
             {`-- src/lib/db.ts:47
 valid_from      TEXT,       -- when the claim became true in the world
 valid_to        TEXT,
-known_from      TEXT NOT NULL,  -- when Lumen came to believe it
+known_from      TEXT NOT NULL,  -- when Hausbuch came to believe it
 known_to        TEXT,
 
 CREATE INDEX idx_facts_known ON facts(known_from, known_to);
@@ -154,7 +154,7 @@ CREATE INDEX idx_facts_valid ON facts(valid_from, valid_to);`}
           <P>
             <B>Teams that conflate valid-time and known-time</B> will fail the question
             &quot;what did we know on April 15th?&quot; the moment the judge asks it.
-            Lumen will not.
+            Hausbuch will not.
           </P>
         </Section>
 
@@ -167,7 +167,7 @@ CREATE INDEX idx_facts_valid ON facts(valid_from, valid_to);`}
             notice it.
           </P>
           <P>
-            Lumen keeps both facts and computes a <B>posterior probability</B> over the
+            Hausbuch keeps both facts and computes a <B>posterior probability</B> over the
             candidate values at read time using a one-step Dawid-Skene (1979) scheme with
             per-source trust priors:
           </P>
@@ -225,14 +225,14 @@ span_quote      TEXT NOT NULL,`}
           <P>
             The proof-lens hover on the landing (<Mono>src/components/FactExplainPopover.tsx</Mono>)
             reads these columns directly. The renderer emits pandoc-style footnotes{" "}
-            <Mono>^[source]</Mono> inline. Under attribution ablation, Lumen strips the
+            <Mono>^[source]</Mono> inline. Under attribution ablation, Hausbuch strips the
             footnotes from the answer text but still returns them in the response&apos;s
             separate <Mono>citations</Mono> field, so clients can decide whether to display.
           </P>
         </Section>
 
         {/* 5. Baselines */}
-        <Section id="baselines" label="05" title="RAG vs long-context vs Lumen">
+        <Section id="baselines" label="05" title="RAG vs long-context vs Hausbuch">
           <P>
             Three ways to answer a question from a corpus:
           </P>
@@ -251,7 +251,7 @@ span_quote      TEXT NOT NULL,`}
               <tbody>
                 <Row label="RAG" color="var(--ink-muted)" pipeline="embed → top-k retrieve → send chunks to LLM" tokens="~15k (a few chunks)" />
                 <Row label="Long context" color="var(--ink-muted)" pipeline="send whole corpus to LLM, every query" tokens="~40k (entire corpus)" />
-                <Row label="Lumen" color="var(--amber-bright)" pipeline="extract facts → render Context.md → send cached doc" tokens="~500 (structured summary)" highlight />
+                <Row label="Hausbuch" color="var(--amber-bright)" pipeline="extract facts → render Context.md → send cached doc" tokens="~500 (structured summary)" highlight />
               </tbody>
             </table>
           </div>
@@ -297,7 +297,7 @@ span_quote      TEXT NOT NULL,`}
             Naive RAG destroys this: retrieved chunks vary per query, so the prefix is
             never byte-identical. Every query is a miss.
           </P>
-          <H3>What Lumen does specifically</H3>
+          <H3>What Hausbuch does specifically</H3>
           <ol className="list-decimal pl-6 space-y-3 text-[15px] mb-6" style={{ color: "var(--ink-muted)" }}>
             <li>
               <B>Deterministic render pipeline.</B> Sections always in the same order (<Mono>SECTION_ORDER</Mono>), predicates within sections sorted by <Mono>first-known-time</Mono>, keys padded to 18 chars so alignment is stable. Same facts → same bytes.
@@ -359,7 +359,7 @@ Q3: miss — 15k tokens`}
             ingested synthetic corpora of 7–102 fake documents and measured the
             per-query token curve. The corpus was generated by{" "}
             <Mono>src/lib/synthetic.ts</Mono>, not real data. Generating fake documents to
-            show Lumen winning is circular. We deleted the chart, the route, and the
+            show Hausbuch winning is circular. We deleted the chart, the route, and the
             generator (commit <Mono>2f2a585</Mono>) and replaced the section with an
             honesty note.
           </P>
@@ -367,7 +367,7 @@ Q3: miss — 15k tokens`}
             Ablation modes, all toggled via <Mono>POST /api/query ablate=…</Mono>:
           </P>
           <Code>
-            {`none           — full Lumen
+            {`none           — full Hausbuch
 bitemporality  — collapse to "latest known fact wins" per predicate; no valid-time
 conflict       — silently pick highest-confidence; no posterior
 attribution    — strip ^[source] citations from the answer
@@ -377,7 +377,7 @@ all            — replace the engine with simulated keyword RAG (ragBaselineAns
             Expected ablation deltas (measured this session):
           </P>
           <Code>
-            {`Lumen (full)        15/15 = 100%
+            {`Hausbuch (full)        15/15 = 100%
 – bitemporality     11/15 =  73%   (−27pp, temporal queries break)
 – Dawid-Skene       13/15 =  86%   (−13pp, conflict questions break)
 – citations         15/15 = 100%   (0pp — citations affect trust, not this metric)
@@ -449,7 +449,7 @@ RAG baseline         6/15 =  40%   (−60pp, temporal + conflict both break)`}
             >
               Most teams will ship a retrieval system.{" "}
               <span className="italic" style={{ color: "var(--amber-bright)" }}>
-                Lumen is a memory system with provenance, temporal awareness, and a cached
+                Hausbuch is a memory system with provenance, temporal awareness, and a cached
                 rendering layer.
               </span>
             </div>
@@ -459,7 +459,7 @@ RAG baseline         6/15 =  40%   (−60pp, temporal + conflict both break)`}
             axes, not one. Conflicts are preserved rather than silently resolved. The
             rendered output is the thing agents cache, not the retrieved chunks. Every
             RAG-shaped submission will fail the &quot;what did we know on April 15th?&quot;
-            question. Lumen won&apos;t.
+            question. Hausbuch won&apos;t.
           </P>
         </Section>
 
@@ -508,7 +508,7 @@ RAG baseline         6/15 =  40%   (−60pp, temporal + conflict both break)`}
         <footer className="max-w-4xl mx-auto px-6 py-16 mt-16">
           <div className="hr-line mb-8" />
           <div className="flex justify-between items-center">
-            <LumenMark size={14} />
+            <HausbuchMark size={14} />
             <div className="flex gap-4 text-[11px] font-mono" style={{ color: "var(--ink-dim)" }}>
               <a href="/demo" className="hover:text-amber-bright transition-colors">/demo</a>
               <a href="/research" className="hover:text-amber-bright transition-colors">/research</a>

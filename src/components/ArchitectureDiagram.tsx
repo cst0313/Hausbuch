@@ -1,8 +1,8 @@
 // path: src/components/ArchitectureDiagram.tsx
 /**
  * Static SVG that illustrates the core architectural claim:
- *   without Lumen: O(A × N × Q) reconstruction
- *   with    Lumen: O(N) ingest + O(A × Q) cheap reads
+ *   without Hausbuch: O(A × N × Q) reconstruction
+ *   with    Hausbuch: O(N) ingest + O(A × Q) cheap reads
  */
 export function ArchitectureDiagram() {
   return (
@@ -101,7 +101,7 @@ export function ArchitectureDiagram() {
           note="Every agent, on every query, re-pulls from every source. Facts get re-extracted. Answers diverge. Tokens scale with A × N × Q."
         />
         <Side
-          title="WITH Lumen"
+          title="WITH Hausbuch"
           subtitle="ingest once, read many"
           color="var(--amber)"
           content={
@@ -140,7 +140,7 @@ export function ArchitectureDiagram() {
                   </text>
                 </g>
               ))}
-              {/* Lumen node */}
+              {/* Hausbuch node */}
               <rect
                 x={128}
                 y={82}
@@ -161,7 +161,7 @@ export function ArchitectureDiagram() {
                 fontStyle="italic"
                 fill="var(--amber-bright)"
               >
-                Lumen
+                Hausbuch
               </text>
               <text
                 x={163}
@@ -197,7 +197,7 @@ export function ArchitectureDiagram() {
                   </text>
                 </g>
               ))}
-              {/* sources → Lumen */}
+              {/* sources → Hausbuch */}
               {[...Array(5)].map((_, i) => (
                 <line
                   key={i}
@@ -209,7 +209,7 @@ export function ArchitectureDiagram() {
                   strokeWidth="1.2"
                 />
               ))}
-              {/* Lumen → agents */}
+              {/* Hausbuch → agents */}
               {[...Array(3)].map((_, i) => (
                 <line
                   key={i}
@@ -244,7 +244,7 @@ export function ArchitectureDiagram() {
         <span style={{ color: "var(--ink)" }}>The scaling claim, in one line:</span>{" "}
         without a context layer, total token cost of answering Q questions from A agents over N
         sources is <span className="font-mono" style={{ color: "#d68572" }}>A · Q · Σ|sᵢ|</span>. With
-        Lumen, it&apos;s <span className="font-mono" style={{ color: "var(--amber-bright)" }}>Σ|sᵢ|</span> (ingest,
+        Hausbuch, it&apos;s <span className="font-mono" style={{ color: "var(--amber-bright)" }}>Σ|sᵢ|</span> (ingest,
         paid once) <span className="font-mono">+ A · Q · |Context.md|</span> (where |Context.md| is
         near-constant in N because duplicate facts collapse).
       </div>

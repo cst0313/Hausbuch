@@ -22,7 +22,7 @@ export type ExtractedFact = {
   confidence: number;
 };
 
-const SYSTEM = `You are Lumen's Extractor. You read a single source document and return an array
+const SYSTEM = `You are Hausbuch's Extractor. You read a single source document and return an array
 of atomic Facts about the named entity. Be precise. Never invent. If the document
 says nothing about the entity, return [].
 
@@ -45,7 +45,7 @@ export async function extract(
     try {
       return await extractViaClaude(entity, source);
     } catch (err) {
-      console.error("[lumen] Claude extraction failed, falling back to heuristic:", err);
+      console.error("[hausbuch] Claude extraction failed, falling back to heuristic:", err);
       return heuristicExtract(entity, source);
     }
   }

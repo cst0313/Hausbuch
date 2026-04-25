@@ -15,6 +15,7 @@ import {
 } from "@/lib/db";
 import { emitEvent } from "@/lib/events";
 import type { Fact, Source } from "@/lib/types";
+import { recordAction } from "@/lib/actions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -168,6 +169,15 @@ export async function POST(
       { status: 500 },
     );
   }
+
+  recordAction({
+    actor: "user",
+    action: "proposal.approve",
+    entity: proposal.entity,
+    target: proposal.id,
+    input: { kind: proposal.kind, resolved_by: resolvedBy },
+    output: { written_fact_ids: writtenFactIds },
+  });
 
   return NextResponse.json({
     proposal: updated,

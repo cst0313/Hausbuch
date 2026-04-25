@@ -28,7 +28,7 @@ export default function NotFound() {
               color: "var(--ink-muted)",
             }}
           >
-            <div style={{ color: "var(--ink-dim)" }}>&gt; lumen query</div>
+            <div style={{ color: "var(--ink-dim)" }}>&gt; hausbuch query</div>
             <div>
               <span style={{ color: "var(--ink-muted)" }}>predicate:</span>{" "}
               <span style={{ color: "var(--amber-bright)" }}>page.exists</span>
@@ -53,7 +53,7 @@ export default function NotFound() {
             className="text-[15px] mb-10 max-w-xl mx-auto"
             style={{ color: "var(--ink-muted)" }}
           >
-            Lumen wouldn&apos;t invent a page to be helpful. If it isn&apos;t here, it isn&apos;t.
+            Hausbuch wouldn&apos;t invent a page to be helpful. If it isn&apos;t here, it isn&apos;t.
             Try one of these, which verifiably are.
           </p>
           <div className="flex flex-wrap gap-3 justify-center">

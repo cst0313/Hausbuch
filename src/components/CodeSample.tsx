@@ -3,7 +3,7 @@
 
 import { useState } from "react";
 
-const pythonSnippet = `from lumen import Context
+const pythonSnippet = `from hausbuch import Context
 
 # Load the living context for an entity
 ctx = Context.load("property:berliner-str-42")
@@ -24,7 +24,7 @@ response = Anthropic().messages.create(
 # → "€1,650 (posterior 0.90). Landlord proposed €1,800 but
 #    Mietpreisbremse caps at €1,650. legal-memo-2026.pdf §4."`;
 
-const tsSnippet = `import { Context } from "@lumen/client";
+const tsSnippet = `import { Context } from "@hausbuch/client";
 import type { BerlinerStr42 } from "./Context.d";
 
 // Typed access — the .d.ts is auto-emitted alongside Context.md
@@ -41,7 +41,7 @@ ctx.on("conflict", ({ predicate, posterior }) => {
 });`;
 
 const curlSnippet = `# ask the context engine directly — no agent framework needed
-curl https://lumen.local/api/query \\
+curl https://hausbuch.local/api/query \\
   -H "content-type: application/json" \\
   -d '{
     "entity": "property:berliner-str-42",

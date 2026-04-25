@@ -1,6 +1,6 @@
 // path: src/app/research/page.tsx
 import { Nav } from "@/components/Nav";
-import { LumenMark } from "@/components/LumenMark";
+import { HausbuchMark } from "@/components/HausbuchMark";
 import { BenchmarkTable } from "@/components/BenchmarkTable";
 import { AblationMatrix } from "@/components/AblationMatrix";
 import { ArchitectureDiagram } from "@/components/ArchitectureDiagram";
@@ -11,7 +11,7 @@ const papers = [
     title: "Developing Time-Oriented Database Applications in SQL",
     year: "1999",
     maps: "bitemporal fact store",
-    essence: "Two time axes — valid-time (when a claim is true in the world) and transaction-time (when we recorded it). Lumen's known-time mirrors transaction-time. Grandparent of SQL:2011.",
+    essence: "Two time axes — valid-time (when a claim is true in the world) and transaction-time (when we recorded it). Hausbuch's known-time mirrors transaction-time. Grandparent of SQL:2011.",
   },
   {
     tag: "Dawid-Skene '79",
@@ -32,28 +32,28 @@ const papers = [
     title: "Chroma Research — The Gradient Between Context and Noise",
     year: "2024",
     maps: "minimal rendered Context.md",
-    essence: "Even frontier models degrade sharply past ~32K tokens with distractors. Lumen's rendering at detail=3 targets ~2k tokens — well within the sweet spot for every model tested.",
+    essence: "Even frontier models degrade sharply past ~32K tokens with distractors. Hausbuch's rendering at detail=3 targets ~2k tokens — well within the sweet spot for every model tested.",
   },
   {
     tag: "Self-RAG '23",
     title: "Asai et al. — Learning to Retrieve, Generate, Critique",
     year: "2023",
     maps: "attribution-grounded generation",
-    essence: "Models trained to emit citations alongside generations are measurably more factual. Lumen requires citations at the storage layer; generation just surfaces them.",
+    essence: "Models trained to emit citations alongside generations are measurably more factual. Hausbuch requires citations at the storage layer; generation just surfaces them.",
   },
   {
     tag: "Generative Agents '23",
     title: "Park et al. — Interactive Simulacra of Human Behavior",
     year: "Stanford 2023",
     maps: "persistent, cumulative memory",
-    essence: "Agents with memory streams exhibit coherent behavior across long horizons. Lumen extends this from per-agent to per-org: shared memory across all agents in the company.",
+    essence: "Agents with memory streams exhibit coherent behavior across long horizons. Hausbuch extends this from per-agent to per-org: shared memory across all agents in the company.",
   },
   {
     tag: "Truth Discovery '16",
     title: "Li et al. — A Survey on Truth Discovery",
     year: "ACM SIGKDD 2016",
     maps: "multi-source reconciliation",
-    essence: "Decade-long survey of the problem: given contradictory claims from imperfect sources, recover truth. Lumen's reconciler is a small instance of this family.",
+    essence: "Decade-long survey of the problem: given contradictory claims from imperfect sources, recover truth. Hausbuch's reconciler is a small instance of this family.",
   },
   {
     tag: "Source Monitoring '93",
@@ -67,14 +67,14 @@ const papers = [
     title: "Packer et al. — MemGPT: LLMs as Operating Systems",
     year: "2023",
     maps: "tiered memory, swap-ins",
-    essence: "Main/external memory with page-in/out discipline. Lumen's detail=1..5 query knob is a related primitive at the org level, not the agent level.",
+    essence: "Main/external memory with page-in/out discipline. Hausbuch's detail=1..5 query knob is a related primitive at the org level, not the agent level.",
   },
   {
     tag: "Anthropic '24",
     title: "Prompt Caching — docs & pricing",
     year: "2024",
     maps: "cache-stable Context.md prefix",
-    essence: "5-minute cache TTL, 90% cost reduction on hits. Lumen's renderer produces append-only documents with stable prefixes to maximize hit rate.",
+    essence: "5-minute cache TTL, 90% cost reduction on hits. Hausbuch's renderer produces append-only documents with stable prefixes to maximize hit rate.",
   },
 ];
 
@@ -125,7 +125,7 @@ export default function ResearchPage() {
             The Qontext track&apos;s premise: every AI agent in your company pulls from scattered
             sources on every call. With A agents, N sources, and Q questions that is
             <span className="font-mono" style={{ color: "#d68572" }}> O(A · N · Q)</span> re-extractions.
-            Lumen replaces it with an ingest-once, read-many topology where query cost
+            Hausbuch replaces it with an ingest-once, read-many topology where query cost
             grows <em>additively</em>, not multiplicatively.
           </p>
           <ArchitectureDiagram />
@@ -140,7 +140,7 @@ export default function ResearchPage() {
             The architectural claim is a math argument, not a measurement. A proper scaling study
             needs a large real corpus (public leases, ERP exports, anonymized Slack archives). We
             removed the synthetic-corpus scaling chart that used to live here — generating fake
-            documents to show Lumen winning is circular. The real measurements you can audit are
+            documents to show Hausbuch winning is circular. The real measurements you can audit are
             the 15-question benchmark and the 5-way ablation below, both run against the current
             (small, real) corpus.
           </div>
@@ -155,14 +155,14 @@ export default function ResearchPage() {
             / benchmark
           </div>
           <h2 className="font-serif text-3xl md:text-4xl mb-3 leading-tight">
-            Live eval · Lumen vs. <span className="italic" style={{ color: "var(--amber-bright)" }}>naive RAG</span> vs. long-context
+            Live eval · Hausbuch vs. <span className="italic" style={{ color: "var(--amber-bright)" }}>naive RAG</span> vs. long-context
           </h2>
           <p
             className="text-[14px] mb-10 max-w-2xl"
             style={{ color: "var(--ink-muted)" }}
           >
             Click run — rows evaluate in real time. Green dots are correct, warm dots
-            are wrong. Lumen doesn&apos;t win every question; we show the losses too.
+            are wrong. Hausbuch doesn&apos;t win every question; we show the losses too.
           </p>
           <BenchmarkTable />
         </section>
@@ -273,7 +273,7 @@ export default function ResearchPage() {
         <footer className="max-w-6xl mx-auto px-6 py-16 mt-8">
           <div className="hr-line mb-10" />
           <div className="flex justify-between items-center">
-            <LumenMark size={14} />
+            <HausbuchMark size={14} />
             <div
               className="text-[11px] font-mono"
               style={{ color: "var(--ink-dim)" }}

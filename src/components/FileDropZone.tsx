@@ -97,7 +97,7 @@ export function FileDropZone({ onIngested }: Props) {
           .pdf · .eml · .txt · .md · .json · one or many at once
         </div>
         <div className="text-[11px] mt-3" style={{ color: "var(--ink-muted)" }}>
-          Judge mode: drop your own document. Lumen extracts facts, reconciles against what it
+          Judge mode: drop your own document. Hausbuch extracts facts, reconciles against what it
           already knows, renders a new <code className="font-mono">Context.md</code>. The agents
           above will re-query.
         </div>

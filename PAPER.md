@@ -1,8 +1,8 @@
 <!-- path: PAPER.md -->
 
-# Lumen: A Bitemporal, Citation-Backed Context Layer for LLM Agents
+# Hausbuch: A Bitemporal, Citation-Backed Context Layer for LLM Agents
 
-**Authors**: Lumen — Berlin, April 2026. Buena × Qontext hackathon submission.
+**Authors**: Hausbuch — Berlin, April 2026. Buena × Qontext hackathon submission.
 
 ---
 
@@ -12,14 +12,14 @@ Large-language-model agents repeatedly reconstruct company reality at runtime: t
 pull scattered facts from mail, CRM, PDFs, and chat on every call, concatenate them
 into a long prompt, and hope the top-k retrieval or haystack-needle trick holds. This
 approach is expensive, inconsistent across agents, and demonstrably brittle on
-temporal and contradictory data [1, 2]. We introduce **Lumen**, a context layer that
+temporal and contradictory data [1, 2]. We introduce **Hausbuch**, a context layer that
 produces a self-updating, citation-backed `Context.md` per business entity. Facts are
 **bitemporal** (valid-time × known-time) following Snodgrass [3], **conflict-aware**
 via Dawid-Skene posterior reconciliation [4], and **cache-engineered** for Anthropic's
 prompt-caching primitives. On a 15-question benchmark over a multi-source property
-corpus, Lumen reduces tokens-per-query by ~88%, improves temporal-question accuracy
+corpus, Hausbuch reduces tokens-per-query by ~88%, improves temporal-question accuracy
 by 39 percentage points, and improves contradiction-accuracy by 55 percentage points
-compared to a naive RAG baseline. Beyond results, Lumen is a deliberate
+compared to a naive RAG baseline. Beyond results, Hausbuch is a deliberate
 counter-position to vector-based retrieval: we argue that *structured facts with
 identity and citations* are the right primitive for agent memory.
 
@@ -45,7 +45,7 @@ These failure modes are not agent-frameworks failures. They are failures of the
 
 ## 2. Approach
 
-Lumen replaces retrieval-over-chunks with **a single rendered document per entity**,
+Hausbuch replaces retrieval-over-chunks with **a single rendered document per entity**,
 backed by a structured fact store.
 
 ### 2.1 Fact store
@@ -59,7 +59,7 @@ insertions, supersessions, and conflict transitions.
 
 ### 2.2 Bitemporality [3, SQL:2011]
 Every fact carries two intervals: the **valid-time** window (when the claim is true in
-the world) and the **known-time** window (when Lumen believed it). Queries can
+the world) and the **known-time** window (when Hausbuch believed it). Queries can
 specify either or both. This enables time-travel ("what did we know on 2026-04-15?")
 and historical-truth queries ("what was the rent in March 2024?") as direct SQL.
 
@@ -105,11 +105,11 @@ legal memo citing Mietpreisbremse, Slack maintenance messages, and Zendesk ticke
 ### 4.3 Baselines
 - **Naive RAG**: 500-token chunks, `text-embedding-3-small`, top-k=5.
 - **Long context**: all sources concatenated, no retrieval.
-- **Lumen**: `Context.md` at `detail=3`, sources fetched only on demand.
+- **Hausbuch**: `Context.md` at `detail=3`, sources fetched only on demand.
 
 ### 4.4 Results (headline)
 
-| Metric                       | Naive RAG | Long ctx | **Lumen** |
+| Metric                       | Naive RAG | Long ctx | **Hausbuch** |
 |---                           |---        |---       |---         |
 | Tokens / query               | 15,200    | 41,800   | **490 (measured)**  |
 | Accuracy — basic             | 93%       | 95%      | **98%**    |
@@ -127,16 +127,16 @@ legal memo citing Mietpreisbremse, Slack maintenance messages, and Zendesk ticke
 
 ## 5. Related work
 
-- **Truth discovery** [4, 6]. Lumen's conflict handling is a direct application to
+- **Truth discovery** [4, 6]. Hausbuch's conflict handling is a direct application to
   AI context.
 - **Bitemporal databases** [3]. The substrate. We claim the first synthesis with LLM
   attention economics.
 - **Long-context degradation** [1, 2]. Informs our minimum-context rendering.
 - **Agent memory** [8, 9]. MemGPT and Generative Agents manage per-agent memory;
-  Lumen is *shared* memory across agents.
-- **Attribution** [5, 7]. Lumen makes attribution the default, not an add-on.
+  Hausbuch is *shared* memory across agents.
+- **Attribution** [5, 7]. Hausbuch makes attribution the default, not an add-on.
 - **Source monitoring** [10]. Cognitive science of tracking where beliefs come from;
-  Lumen's UI surfaces this for AI systems.
+  Hausbuch's UI surfaces this for AI systems.
 
 ## 6. Limitations
 

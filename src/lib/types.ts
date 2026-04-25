@@ -1,6 +1,6 @@
 // path: src/lib/types.ts
 /**
- * Lumen core types. See REBUILD.md §4 for the design rationale.
+ * Hausbuch core types. See REBUILD.md §4 for the design rationale.
  *
  * Key ideas:
  *  - Facts are append-only. Every change writes a new row.
@@ -9,9 +9,24 @@
  *  - Confidence is per-source; the reconciler merges into a posterior at conflict time.
  */
 
-export type EntityId = string; // e.g. "property:berliner-str-42"
-export type SourceId = string; // e.g. "source:lease-2024-03.pdf"
+export type EntityId = string; // e.g. "weg:immanuelkirchstr-26", "unit:EH-001"
+export type SourceId = string; // e.g. "src:land-registry"
 export type FactId = string; // uuid
+
+// ── Entity types (WEG hierarchy) ────────────────────────────────────────────
+
+export type EntityType = "weg" | "building" | "unit" | "owner" | "tenant" | "contractor";
+
+export type Entity = {
+  id: EntityId;
+  type: EntityType;
+  name: string;
+  parent_id?: string | null;
+  meta?: Record<string, unknown>;
+  created_at: string;
+};
+
+// ── Source kinds ─────────────────────────────────────────────────────────────
 
 export type SourceKind =
   | "email"
@@ -25,7 +40,17 @@ export type SourceKind =
   /** Text was extracted from an image or scanned PDF via Gemini vision (FR-24). */
   | "image-ocr"
   /** Live enrichment fetched from Tavily (FR-25). */
-  | "tavily";
+  | "tavily"
+  /** Bank transaction (Kontoauszug). */
+  | "bank"
+  /** Contractor invoice (Rechnung). */
+  | "invoice"
+  /** Formal letter (Brief — Hausgeld, Kündigung, etc.). */
+  | "letter"
+  /** Master data import (Stammdaten). */
+  | "stammdaten"
+  /** Freeform user knowledge input. */
+  | "user-input";
 
 export type Source = {
   id: SourceId;
@@ -36,6 +61,18 @@ export type Source = {
   raw_excerpt: string;
   /** Prior reliability 0..1 — used in Dawid-Skene posterior. */
   source_prior: number;
+  /** Entity this source primarily relates to. */
+  entity_id?: string;
+  /** Email thread ID for conversation tracking. */
+  thread_id?: string;
+  /** Email category (e.g. "mieter/schaden", "eigentuemer/rechtlich"). */
+  category?: string;
+  /** Email direction: incoming or outgoing. */
+  direction?: "incoming" | "outgoing";
+  /** Sender address for emails. */
+  from_addr?: string;
+  /** Recipient address for emails. */
+  to_addr?: string;
 };
 
 export type FactValue = string | number | boolean | null;
@@ -55,7 +92,7 @@ export type Fact = {
   /** valid_time interval — when the claim is true in the world. */
   valid_from?: string | null;
   valid_to?: string | null;
-  /** known_time interval — when Lumen believed it. */
+  /** known_time interval — when Hausbuch believed it. */
   known_from: string;
   known_to: string | null;
   source: SourceId;

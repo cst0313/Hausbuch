@@ -125,6 +125,7 @@ export async function POST(req: NextRequest) {
       const out = await geminiCompose({
         prompt: question,
         context: `${systemText}\n\n---\n\n${contextMd}`,
+        meta: { entity },
       });
       return NextResponse.json({
         answer: out.text,
@@ -143,7 +144,7 @@ export async function POST(req: NextRequest) {
     } catch (err) {
       const reason =
         err instanceof GeminiError ? err.kind : err instanceof Error ? err.name : "unknown";
-      console.error("[lumen] gemini query failed:", reason);
+      console.error("[hausbuch] gemini query failed:", reason);
       // If Anthropic is available, try it next.
       if (hasAnthropic) {
         return await anthropicAttempt({
@@ -252,7 +253,7 @@ async function anthropicAttempt(args: AttemptArgs): Promise<NextResponse> {
       persona: args.persona,
     });
   } catch (err) {
-    console.error("[lumen] anthropic query failed:", err);
+    console.error("[hausbuch] anthropic query failed:", err);
     return composeFallback({
       entity: args.entity,
       question: args.question,

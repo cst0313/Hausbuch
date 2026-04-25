@@ -4,43 +4,43 @@ const rows = [
     axis: "storage primitive",
     rag: "vector chunks",
     longctx: "concatenated text",
-    lumen: "structured facts",
+    hausbuch: "structured facts",
   },
   {
     axis: "temporal awareness",
     rag: "none",
     longctx: "none",
-    lumen: "bitemporal (valid × known)",
+    hausbuch: "bitemporal (valid × known)",
   },
   {
     axis: "conflict handling",
     rag: "silent — top-k wins",
     longctx: "silent — LLM guesses",
-    lumen: "Bayesian posterior, visible",
+    hausbuch: "Bayesian posterior, visible",
   },
   {
     axis: "attribution",
     rag: "chunk reference",
     longctx: "none",
-    lumen: "text-span proof",
+    hausbuch: "text-span proof",
   },
   {
     axis: "tokens / query",
     rag: "~15k",
     longctx: "~40k",
-    lumen: "~0.5k (measured)",
+    hausbuch: "~0.5k (measured)",
   },
   {
     axis: "prompt cache hit",
     rag: "variable",
     longctx: "variable",
-    lumen: "engineered stable",
+    hausbuch: "engineered stable",
   },
   {
     axis: "human-readable",
     rag: "no",
     longctx: "no",
-    lumen: "markdown, git-diffable",
+    hausbuch: "markdown, git-diffable",
   },
 ];
 
@@ -66,7 +66,7 @@ export function ComparisonTable() {
                 background: "rgba(232, 178, 107, 0.06)",
               }}
             >
-              lumen
+              hausbuch
             </th>
           </tr>
         </thead>
@@ -90,7 +90,7 @@ export function ComparisonTable() {
                   fontWeight: 500,
                 }}
               >
-                {r.lumen}
+                {r.hausbuch}
               </td>
             </tr>
           ))}

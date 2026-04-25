@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
  */
 export async function POST() {
   closeDb();
-  const DB_PATH = path.resolve(process.cwd(), "data", "lumen.db");
+  const DB_PATH = path.resolve(process.cwd(), "data", "hausbuch.db");
   for (const p of [DB_PATH, DB_PATH + "-wal", DB_PATH + "-shm"]) {
     try {
       if (fs.existsSync(p)) fs.unlinkSync(p);

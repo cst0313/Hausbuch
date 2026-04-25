@@ -1,7 +1,7 @@
 // path: src/lib/normalize.ts
 /**
  * Schema alignment — resolve source-specific predicate names to canonical
- * Lumen predicates.
+ * Hausbuch predicates.
  *
  * Buena track §1: "'owner' is called Eigentümer, MietEig, Kontakt, or owner
  * depending on the source system. You must resolve identities across ERPs."

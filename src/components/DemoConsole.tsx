@@ -69,7 +69,7 @@ export function DemoConsole() {
     setContextMd(md);
 
     // Parse trailer to update stats
-    const trailer = md.match(/Lumen · (\d+) facts · (\d+) sources · (\d+) conflicts/);
+    const trailer = md.match(/Hausbuch · (\d+) facts · (\d+) sources · (\d+) conflicts/);
     if (trailer) {
       setStats({
         facts: Number(trailer[1]),
@@ -185,13 +185,13 @@ export function DemoConsole() {
 
   const tokensSummary = useMemo(() => {
     if (!botAns || !drafterAns) return null;
-    const lumen_total = botAns.tokens_in + drafterAns.tokens_in;
+    const hausbuch_total = botAns.tokens_in + drafterAns.tokens_in;
     const longctx_each = botAns.tokens_longctx_equiv ?? 0;
     const longctx_total = longctx_each * 2; // both agents would pay full corpus
-    const reduction = longctx_total > 0 ? Math.max(0, Math.round((1 - lumen_total / longctx_total) * 100)) : 0;
+    const reduction = longctx_total > 0 ? Math.max(0, Math.round((1 - hausbuch_total / longctx_total) * 100)) : 0;
     return {
-      lumen_per_query: Math.round(lumen_total / 2),
-      lumen_total,
+      hausbuch_per_query: Math.round(hausbuch_total / 2),
+      hausbuch_total,
       longctx_per_query: longctx_each,
       longctx_total,
       reduction,
@@ -278,7 +278,7 @@ export function DemoConsole() {
           {tokensSummary && (
             <span>
               <span style={{ color: "var(--ink-dim)" }}>tokens </span>
-              <span style={{ color: "var(--ink)" }}>{tokensSummary.lumen_total}</span>
+              <span style={{ color: "var(--ink)" }}>{tokensSummary.hausbuch_total}</span>
             </span>
           )}
         </div>
@@ -331,10 +331,10 @@ export function DemoConsole() {
                 className="font-mono text-[10px] uppercase tracking-wider mb-1"
                 style={{ color: "var(--amber-bright)" }}
               >
-                lumen · structured
+                hausbuch · structured
               </div>
               <div className="font-serif text-3xl" style={{ color: "var(--amber-bright)" }}>
-                {tokensSummary.lumen_per_query.toLocaleString()}
+                {tokensSummary.hausbuch_per_query.toLocaleString()}
               </div>
               <div className="text-[11px] mt-1" style={{ color: "var(--ink-muted)" }}>
                 tokens · sent to the model per query
@@ -366,7 +366,7 @@ export function DemoConsole() {
                 style={{ color: "var(--ink-muted)" }}
               >
                 The gap here is modest — only {stats?.sources ?? 0} sources. At a typical enterprise
-                corpus (100+ sources) Lumen&apos;s cost stays roughly flat while long-context
+                corpus (100+ sources) Hausbuch&apos;s cost stays roughly flat while long-context
                 scales linearly with the corpus.{" "}
                 <a
                   href="/research"

@@ -6,7 +6,7 @@ import { ablatedView, type Ablation } from "./ablations";
 import { listSources } from "./db";
 
 /**
- * Natural-language composer for Lumen answers.
+ * Natural-language composer for Hausbuch answers.
  *
  * Takes the live bitemporal view + the question + a persona ("chatbot" or
  * "drafter") and produces prose. No arrow-syntax. No raw posterior numbers

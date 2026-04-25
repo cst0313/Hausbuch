@@ -34,7 +34,7 @@ export function emitEvent(e: LumenEvent): void {
     try {
       fn(stamped);
     } catch (err) {
-      console.error("[lumen] subscriber failed:", err);
+      console.error("[hausbuch] subscriber failed:", err);
     }
   }
 }

@@ -17,6 +17,7 @@
  */
 
 import type { Fact, Source, SourceKind } from "./types";
+import { recordAction } from "./actions";
 import {
   getEnrichmentCache,
   ident,
@@ -308,12 +309,40 @@ export async function runEnrichments(
       console.log(
         `[enrich] kind=${s.value.kind} served_from=${s.value.served_from} latency_ms=${s.value.latency_ms} fact_id=${s.value.fact.id}`,
       );
+      recordAction({
+        actor: "tavily",
+        action: `enrich.${s.value.kind}`,
+        entity,
+        target: s.value.trigger_fact_id,
+        input: { kind: s.value.kind },
+        output: { matched: true, served_from: s.value.served_from, fact_id: s.value.fact.id },
+        latency_ms: s.value.latency_ms,
+        cost_usd: s.value.served_from === "live" ? 0.01 : 0,
+        partner: "tavily",
+      });
     } else if (s.status === "fulfilled") {
       console.log(
         `[enrich] kind=${s.value.kind} skipped reason=${s.value.skipped_reason ?? "no-match"} latency_ms=${s.value.latency_ms}`,
       );
+      recordAction({
+        actor: "tavily",
+        action: `enrich.${s.value.kind}`,
+        entity,
+        target: s.value.trigger_fact_id,
+        input: { kind: s.value.kind },
+        output: { matched: false, reason: s.value.skipped_reason ?? "no-match", served_from: s.value.served_from },
+        latency_ms: s.value.latency_ms,
+        partner: "tavily",
+      });
     } else {
       console.warn(`[enrich] task rejected: ${String(s.reason)}`);
+      recordAction({
+        actor: "tavily",
+        action: "enrich.failed",
+        entity,
+        output: { error: String(s.reason) },
+        partner: "tavily",
+      });
     }
   }
   return out;

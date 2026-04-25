@@ -32,7 +32,7 @@ const questions: Question[] = [
   { category: "temporal", question: "When did Anna's tenancy begin?", golden_snippet: "2024-03-01" },
 ];
 
-type Col = "rag" | "longctx" | "lumen";
+type Col = "rag" | "longctx" | "hausbuch";
 
 type Cell = { answer: string; correct: boolean; tokens_in?: number; latency_ms?: number } | null;
 
@@ -61,7 +61,7 @@ export function BenchmarkTable() {
     if (q.at_known) body.at_known = q.at_known;
     if (col === "rag") body.baseline = "rag";
     if (col === "longctx") body.baseline = "longctx";
-    // lumen: no baseline — full engine
+    // hausbuch: no baseline — full engine
 
     try {
       const resp = await fetch("/api/query", {
@@ -114,22 +114,22 @@ export function BenchmarkTable() {
     // 2. Fire each question × each column — 45 live calls total
     for (let i = 0; i < questions.length; i++) {
       const q = questions[i];
-      const [rag, longctx, lumen] = await Promise.all([
+      const [rag, longctx, hausbuch] = await Promise.all([
         call(q, "rag"),
         call(q, "longctx"),
-        call(q, "lumen"),
+        call(q, "hausbuch"),
       ]);
       setResults((prev) => ({
         ...prev,
         [`${i}:rag`]: rag,
         [`${i}:longctx`]: longctx,
-        [`${i}:lumen`]: lumen,
+        [`${i}:hausbuch`]: hausbuch,
       }));
       setRevealed((prev) => {
         const next = new Set(prev);
         next.add(`${i}:rag`);
         next.add(`${i}:longctx`);
-        next.add(`${i}:lumen`);
+        next.add(`${i}:hausbuch`);
         return next;
       });
     }
@@ -166,7 +166,7 @@ export function BenchmarkTable() {
           style={{
             color: "var(--ink-dim)",
             borderRight: "1px solid var(--line)",
-            background: col === "lumen" ? "rgba(232, 178, 107, 0.04)" : undefined,
+            background: col === "hausbuch" ? "rgba(232, 178, 107, 0.04)" : undefined,
           }}
         >
           <span className="inline-flex items-center gap-1.5">
@@ -182,7 +182,7 @@ export function BenchmarkTable() {
         style={{
           color: data.correct ? "var(--ink)" : "#d68572",
           background: data.correct
-            ? col === "lumen"
+            ? col === "hausbuch"
               ? "rgba(143, 210, 128, 0.06)"
               : "transparent"
             : "rgba(214, 133, 114, 0.08)",
@@ -212,7 +212,7 @@ export function BenchmarkTable() {
           </div>
           <div className="text-[11px] font-mono" style={{ color: "var(--ink-dim)" }}>
             All three columns are measured. RAG = keyword top-k retrieval. Long-ctx = full corpus
-            with modeled attention failure. Lumen = structured facts + bitemporal + Dawid-Skene.
+            with modeled attention failure. Hausbuch = structured facts + bitemporal + Dawid-Skene.
           </div>
         </div>
         <button
@@ -253,7 +253,7 @@ export function BenchmarkTable() {
                 long ctx <span style={{ color: "var(--ink-dim)" }}>· full corpus</span>
               </th>
               <th className="text-left px-3 py-3 font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--amber-bright)", background: "rgba(232, 178, 107, 0.06)" }}>
-                lumen <span style={{ color: "var(--amber)" }}>· structured + bitemporal</span>
+                hausbuch <span style={{ color: "var(--amber)" }}>· structured + bitemporal</span>
               </th>
             </tr>
           </thead>
@@ -277,7 +277,7 @@ export function BenchmarkTable() {
                 </td>
                 {cell(i, "rag")}
                 {cell(i, "longctx")}
-                {cell(i, "lumen")}
+                {cell(i, "hausbuch")}
               </tr>
             ))}
             {done && (
@@ -298,9 +298,9 @@ export function BenchmarkTable() {
                   </div>
                 </td>
                 <td className="px-3 py-3 font-mono" style={{ color: "var(--amber-bright)", background: "rgba(232, 178, 107, 0.06)", fontWeight: 500 }}>
-                  <div>{score("lumen")} <span style={{ color: "var(--amber)" }}>· {pct("lumen")}%</span></div>
+                  <div>{score("hausbuch")} <span style={{ color: "var(--amber)" }}>· {pct("hausbuch")}%</span></div>
                   <div className="text-[10px] mt-0.5" style={{ color: "var(--amber)" }}>
-                    {totalTokens("lumen").toLocaleString()} tok
+                    {totalTokens("hausbuch").toLocaleString()} tok
                   </div>
                 </td>
               </tr>

@@ -3,10 +3,10 @@ import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
-import type { Fact, FactEvent, FactEventKind, FactValue, Source } from "./types";
+import type { Entity, EntityType, Fact, FactEvent, FactEventKind, FactValue, Source } from "./types";
 
 /**
- * Lumen storage. Single SQLite file. Append-only facts (one row per fact-event).
+ * Hausbuch storage. Single SQLite file. Append-only facts (one row per fact-event).
  * A compact `current` view projects the live set.
  */
 
@@ -26,9 +26,21 @@ export function closeDb(): void {
 }
 
 const DB_DIR = path.resolve(process.cwd(), "data");
-const DB_PATH = path.join(DB_DIR, "lumen.db");
+const DB_PATH = path.join(DB_DIR, "hausbuch.db");
 
 const SCHEMA = `
+CREATE TABLE IF NOT EXISTS entities (
+  id         TEXT PRIMARY KEY,
+  type       TEXT NOT NULL,
+  name       TEXT NOT NULL,
+  parent_id  TEXT,
+  meta_json  TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_entities_type   ON entities(type);
+CREATE INDEX IF NOT EXISTS idx_entities_parent ON entities(parent_id);
+
 CREATE TABLE IF NOT EXISTS sources (
   id            TEXT PRIMARY KEY,
   kind          TEXT NOT NULL,
@@ -36,7 +48,13 @@ CREATE TABLE IF NOT EXISTS sources (
   url           TEXT,
   ingested_at   TEXT NOT NULL,
   raw_excerpt   TEXT NOT NULL,
-  source_prior  REAL NOT NULL
+  source_prior  REAL NOT NULL,
+  entity_id     TEXT,
+  thread_id     TEXT,
+  category      TEXT,
+  direction     TEXT,
+  from_addr     TEXT,
+  to_addr       TEXT
 );
 
 CREATE TABLE IF NOT EXISTS facts (
@@ -110,6 +128,27 @@ CREATE TABLE IF NOT EXISTS enrichment_cache (
 
 CREATE INDEX IF NOT EXISTS idx_enrichment_kind    ON enrichment_cache(enrichment_kind);
 CREATE INDEX IF NOT EXISTS idx_enrichment_expires ON enrichment_cache(expires_at);
+
+-- Phase 3 (FR-7): append-only action log for transparency + audit.
+-- Every significant system action is recorded here with redacted payloads.
+CREATE TABLE IF NOT EXISTS actions (
+  id           TEXT PRIMARY KEY,
+  ts           TEXT NOT NULL,
+  actor        TEXT NOT NULL,
+  action       TEXT NOT NULL,
+  entity       TEXT,
+  target       TEXT,
+  input_json   TEXT,
+  output_json  TEXT,
+  latency_ms   INTEGER,
+  cost_tokens  INTEGER,
+  cost_usd     REAL,
+  partner      TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_actions_ts     ON actions(ts);
+CREATE INDEX IF NOT EXISTS idx_actions_entity ON actions(entity);
+CREATE INDEX IF NOT EXISTS idx_actions_actor  ON actions(actor);
 `;
 
 export function db(): Database.Database {
@@ -127,7 +166,7 @@ export function db(): Database.Database {
       const seed = require("./seed") as { seedIfEmpty: (db: Database.Database) => void };
       seed.seedIfEmpty(_db);
     } catch (err) {
-      console.error("[lumen] seed failed:", err);
+      console.error("[hausbuch] seed failed:", err);
     }
   }
   return _db;
@@ -154,8 +193,12 @@ export function newProposalId(): string {
 export function insertSource(s: Source): void {
   db()
     .prepare(
-      `INSERT OR REPLACE INTO sources (id, kind, title, url, ingested_at, raw_excerpt, source_prior)
-       VALUES (@id, @kind, @title, @url, @ingested_at, @raw_excerpt, @source_prior)`
+      `INSERT OR REPLACE INTO sources
+         (id, kind, title, url, ingested_at, raw_excerpt, source_prior,
+          entity_id, thread_id, category, direction, from_addr, to_addr)
+       VALUES
+         (@id, @kind, @title, @url, @ingested_at, @raw_excerpt, @source_prior,
+          @entity_id, @thread_id, @category, @direction, @from_addr, @to_addr)`
     )
     .run({
       id: s.id,
@@ -165,7 +208,75 @@ export function insertSource(s: Source): void {
       ingested_at: s.ingested_at,
       raw_excerpt: s.raw_excerpt,
       source_prior: s.source_prior,
+      entity_id: s.entity_id ?? null,
+      thread_id: s.thread_id ?? null,
+      category: s.category ?? null,
+      direction: s.direction ?? null,
+      from_addr: s.from_addr ?? null,
+      to_addr: s.to_addr ?? null,
     });
+}
+
+// ── Entities ──────────────────────────────────────────────────────────────────
+
+export function insertEntity(e: Entity): void {
+  db()
+    .prepare(
+      `INSERT OR REPLACE INTO entities (id, type, name, parent_id, meta_json, created_at)
+       VALUES (@id, @type, @name, @parent_id, @meta_json, @created_at)`
+    )
+    .run({
+      id: e.id,
+      type: e.type,
+      name: e.name,
+      parent_id: e.parent_id ?? null,
+      meta_json: e.meta ? JSON.stringify(e.meta) : null,
+      created_at: e.created_at,
+    });
+}
+
+export function getEntity(id: string): Entity | null {
+  const row = db()
+    .prepare(`SELECT * FROM entities WHERE id = @id`)
+    .get({ id }) as RawEntity | undefined;
+  return row ? rawToEntity(row) : null;
+}
+
+export function listEntities(opts: {
+  type?: EntityType;
+  parent_id?: string;
+} = {}): Entity[] {
+  const clauses: string[] = [];
+  const args: Record<string, unknown> = {};
+  if (opts.type) { clauses.push("type = @type"); args.type = opts.type; }
+  if (opts.parent_id) { clauses.push("parent_id = @parent_id"); args.parent_id = opts.parent_id; }
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  const rows = db()
+    .prepare(`SELECT * FROM entities ${where} ORDER BY name ASC`)
+    .all(args) as RawEntity[];
+  return rows.map(rawToEntity);
+}
+
+type RawEntity = {
+  id: string;
+  type: string;
+  name: string;
+  parent_id: string | null;
+  meta_json: string | null;
+  created_at: string;
+};
+
+function rawToEntity(r: RawEntity): Entity {
+  let meta: Record<string, unknown> | undefined;
+  try { meta = r.meta_json ? JSON.parse(r.meta_json) : undefined; } catch { meta = undefined; }
+  return {
+    id: r.id,
+    type: r.type as EntityType,
+    name: r.name,
+    parent_id: r.parent_id,
+    meta,
+    created_at: r.created_at,
+  };
 }
 
 export function insertFact(f: Fact): void {
@@ -235,20 +346,11 @@ export function getSource(id: string): Source | null {
     .prepare(`SELECT * FROM sources WHERE id = @id`)
     .get({ id }) as RawSource | undefined;
   if (!row) return null;
-  return {
-    id: row.id,
-    kind: row.kind as Source["kind"],
-    title: row.title,
-    url: row.url ?? undefined,
-    ingested_at: row.ingested_at,
-    raw_excerpt: row.raw_excerpt,
-    source_prior: row.source_prior,
-  };
+  return rawToSource(row);
 }
 
-export function listSources(): Source[] {
-  const rows = db().prepare(`SELECT * FROM sources ORDER BY ingested_at ASC`).all() as RawSource[];
-  return rows.map((r) => ({
+function rawToSource(r: RawSource): Source {
+  return {
     id: r.id,
     kind: r.kind as Source["kind"],
     title: r.title,
@@ -256,7 +358,18 @@ export function listSources(): Source[] {
     ingested_at: r.ingested_at,
     raw_excerpt: r.raw_excerpt,
     source_prior: r.source_prior,
-  }));
+    entity_id: r.entity_id ?? undefined,
+    thread_id: r.thread_id ?? undefined,
+    category: r.category ?? undefined,
+    direction: (r.direction as Source["direction"]) ?? undefined,
+    from_addr: r.from_addr ?? undefined,
+    to_addr: r.to_addr ?? undefined,
+  };
+}
+
+export function listSources(): Source[] {
+  const rows = db().prepare(`SELECT * FROM sources ORDER BY ingested_at ASC`).all() as RawSource[];
+  return rows.map(rawToSource);
 }
 
 // ── Proposals (FR-18) ──────────────────────────────────────────────────────
@@ -509,6 +622,12 @@ type RawSource = {
   ingested_at: string;
   raw_excerpt: string;
   source_prior: number;
+  entity_id: string | null;
+  thread_id: string | null;
+  category: string | null;
+  direction: string | null;
+  from_addr: string | null;
+  to_addr: string | null;
 };
 
 function serializeValue(v: Fact["value"]): string | null {

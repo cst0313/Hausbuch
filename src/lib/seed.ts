@@ -1,306 +1,705 @@
 // path: src/lib/seed.ts
-import type Database from "better-sqlite3";
-import type { Fact, Source, SourceKind } from "./types";
-import { ident, insertSource, insertFact, logEvent, newFactId } from "./db";
-
 /**
- * Baseline seed: six sources with pre-extracted facts that together describe the
- * property at a known-time before the landlord email or the legal memo arrive.
+ * Seed from the hackathon WEG dataset (Immanuelkirchstraße 26, Berlin 10405).
  *
- * Everything above that baseline — the rent-raise email, the legal memo, any
- * judge-provided file — is *ingested live* through POST /api/ingest. That is
- * what makes the demo feel real: the DB grows on stage.
+ * Loads stammdaten.json and creates entities + facts for:
+ *   1 WEG (Liegenschaft), 3 buildings, 52 units,
+ *   35 owners, 26 tenants, 16 contractors.
+ *
+ * Then bulk-imports all historical emails (6,546) and the 10-day incremental set
+ * as sources with thread tracking, plus bank transactions as financial facts.
  */
 
-export const ENTITY = "property:berliner-str-42";
+import type Database from "better-sqlite3";
+import fs from "fs";
+import path from "path";
+import type { Entity, Fact, Source, SourceKind } from "./types";
+import {
+  ident,
+  insertEntity,
+  insertSource,
+  insertFact,
+  logEvent,
+  newFactId,
+  newSourceId,
+} from "./db";
 
-const baselineSources: Source[] = [
-  {
-    id: "src:land-registry",
-    kind: "pdf",
-    title: "land-registry.pdf",
-    ingested_at: "2023-01-10T09:00:00Z",
-    raw_excerpt:
-      "Grundbuchauszug — Berliner Str. 42, 10178 Berlin. Einheit: 6 Wohneinheiten. Eigentümer seit 2019: Müller Immobilien GmbH (HRB 184321 B).",
-    source_prior: 0.98,
-  },
-  {
-    id: "src:erp-buildings",
-    kind: "erp",
-    title: "erp:buildings#b-4412",
-    ingested_at: "2023-01-15T12:00:00Z",
-    raw_excerpt:
-      'Building asset record b-4412. type: "residential". units: 6. year_built: 1903. last_renovation: 2021-08. floor_area_m2: 512.',
-    source_prior: 0.9,
-  },
-  {
-    id: "src:contract-2024",
-    kind: "pdf",
-    title: "contract-2024.pdf",
-    ingested_at: "2024-01-02T10:00:00Z",
-    raw_excerpt:
-      "Hausverwaltungsvertrag zwischen Müller Immobilien GmbH (nachfolgend „Vermieter\") und Schulz & Partner Hausverwaltung. Gültig ab 2024-01-01.",
-    source_prior: 0.92,
-  },
-  {
-    id: "src:lease-2024-03",
-    kind: "pdf",
-    title: "lease-2024-03.pdf",
-    ingested_at: "2024-02-28T14:30:00Z",
-    raw_excerpt:
-      "Mietvertrag · Wohnung 3, Berliner Str. 42. Mieter: Anna Schmidt (geb. 1989). Mietbeginn: 2024-03-01. Befristet bis: 2027-02-28. Die monatliche Grundmiete beträgt EUR 1.500,00 (in Worten: eintausendfünfhundert). Zuvor: EUR 1.400,00 (2023-01-01 bis 2024-02-29).",
-    source_prior: 0.97,
-  },
-  {
-    id: "src:slack-maint",
-    kind: "slack",
-    title: "slack:#maint msg-8831",
-    ingested_at: "2026-02-14T16:45:00Z",
-    raw_excerpt:
-      "#maint — @oskar (2026-02-14 18:45): Inspection Berliner Str. 42 abgeschlossen. Apt 3: alles in Ordnung. Heizung Apt 5 läuft etwas laut, Ticket erstellt.",
-    source_prior: 0.8,
-  },
-  {
-    id: "src:zendesk-t2210",
-    kind: "zendesk",
-    title: "zendesk:T-2210",
-    ingested_at: "2026-02-14T17:10:00Z",
-    raw_excerpt:
-      "Ticket T-2210 — Heizung Berliner Str. 42, Apt 5. Status: open. Assigned: @oskar. Priority: normal. Description: Nachjustierung Thermostat nötig.",
-    source_prior: 0.85,
-  },
-];
+// ── Default entity for backwards compat ─────────────────────────────────────
 
-type FactSeed = {
-  predicate: string;
-  value: string | number | null;
-  unit?: string;
-  valid_from?: string | null;
-  valid_to?: string | null;
-  known_from: string;
-  source: string;
-  span: { start: number; end: number; quote: string };
-  confidence: number;
+export const ENTITY = "weg:immanuelkirchstr-26";
+
+// ── Hackathon data path ─────────────────────────────────────────────────────
+
+const HACKATHON_DIR = path.resolve(process.cwd(), "tmp", "hackathon");
+const STAMMDATEN_PATH = path.join(HACKATHON_DIR, "stammdaten", "stammdaten.json");
+
+// ── Types matching stammdaten.json ──────────────────────────────────────────
+
+type Liegenschaft = {
+  id: string; name: string; strasse: string; plz: string; ort: string;
+  baujahr: number; sanierung: number;
+  verwalter: string; verwalter_strasse: string; verwalter_plz: string;
+  verwalter_ort: string; verwalter_email: string; verwalter_telefon: string;
 };
 
-const baselineFacts: FactSeed[] = [
-  {
-    predicate: "identity.address",
-    value: "Berliner Str. 42, 10178 Berlin",
-    valid_from: "2019-01-01",
-    known_from: "2023-01-10T09:00:00Z",
-    source: "src:land-registry",
-    span: { start: 16, end: 48, quote: "Berliner Str. 42, 10178 Berlin" },
-    confidence: 0.99,
-  },
-  {
-    predicate: "identity.type",
-    value: "residential",
-    valid_from: "2019-01-01",
-    known_from: "2023-01-15T12:00:00Z",
-    source: "src:erp-buildings",
-    span: { start: 30, end: 43, quote: '"residential"' },
-    confidence: 0.98,
-  },
-  {
-    predicate: "identity.units",
-    value: 6,
-    valid_from: "1903-01-01",
-    known_from: "2023-01-10T09:00:00Z",
-    source: "src:land-registry",
-    span: { start: 52, end: 70, quote: "6 Wohneinheiten" },
-    confidence: 0.99,
-  },
-  {
-    predicate: "identity.owner",
-    value: "Müller Immobilien GmbH",
-    valid_from: "2019-01-01",
-    known_from: "2023-01-10T09:00:00Z",
-    source: "src:land-registry",
-    span: { start: 92, end: 114, quote: "Müller Immobilien GmbH" },
-    confidence: 0.98,
-  },
-  {
-    predicate: "identity.year_built",
-    value: 1903,
-    valid_from: "1903-01-01",
-    known_from: "2023-01-15T12:00:00Z",
-    source: "src:erp-buildings",
-    span: { start: 55, end: 71, quote: "year_built: 1903" },
-    confidence: 0.95,
-  },
-  {
-    predicate: "identity.floor_area_m2",
-    value: 512,
-    unit: "m²",
-    valid_from: "2021-08-01",
-    known_from: "2023-01-15T12:00:00Z",
-    source: "src:erp-buildings",
-    span: { start: 95, end: 115, quote: "floor_area_m2: 512" },
-    confidence: 0.92,
-  },
-  // Prior rent
-  {
-    predicate: "tenancy.rent.base",
-    value: 1400,
-    unit: "EUR/month",
-    valid_from: "2023-01-01",
-    valid_to: "2024-02-29",
-    known_from: "2024-02-28T14:30:00Z",
-    source: "src:lease-2024-03",
-    span: {
-      start: 155,
-      end: 214,
-      quote: "Zuvor: EUR 1.400,00 (2023-01-01 bis 2024-02-29)",
-    },
-    confidence: 0.95,
-  },
-  // Current rent
-  {
-    predicate: "tenancy.rent.base",
-    value: 1500,
-    unit: "EUR/month",
-    valid_from: "2024-03-01",
-    known_from: "2024-02-28T14:30:00Z",
-    source: "src:lease-2024-03",
-    span: {
-      start: 90,
-      end: 145,
-      quote:
-        "Die monatliche Grundmiete beträgt EUR 1.500,00 (in Worten: eintausendfünfhundert)",
-    },
-    confidence: 0.99,
-  },
-  {
-    predicate: "tenancy.tenant",
-    value: "Anna Schmidt",
-    valid_from: "2024-03-01",
-    known_from: "2024-02-28T14:30:00Z",
-    source: "src:lease-2024-03",
-    span: { start: 40, end: 70, quote: "Mieter: Anna Schmidt (geb. 1989)" },
-    confidence: 0.98,
-  },
-  {
-    predicate: "tenancy.start",
-    value: "2024-03-01",
-    valid_from: "2024-03-01",
-    known_from: "2024-02-28T14:30:00Z",
-    source: "src:lease-2024-03",
-    span: { start: 70, end: 94, quote: "Mietbeginn: 2024-03-01" },
-    confidence: 0.98,
-  },
-  {
-    predicate: "tenancy.end",
-    value: "2027-02-28",
-    valid_from: "2024-03-01",
-    known_from: "2024-02-28T14:30:00Z",
-    source: "src:lease-2024-03",
-    span: { start: 93, end: 120, quote: "Befristet bis: 2027-02-28" },
-    confidence: 0.97,
-  },
-  {
-    predicate: "condition.last_inspection",
-    value: "2026-02-14",
-    valid_from: "2026-02-14",
-    known_from: "2026-02-14T16:45:00Z",
-    source: "src:slack-maint",
-    span: {
-      start: 20,
-      end: 75,
-      quote: "Inspection Berliner Str. 42 abgeschlossen. Apt 3: alles in Ordnung",
-    },
-    confidence: 0.9,
-  },
-  {
-    predicate: "condition.open_tickets",
-    value: 1,
-    valid_from: "2026-02-14",
-    known_from: "2026-02-14T17:10:00Z",
-    source: "src:zendesk-t2210",
-    span: { start: 0, end: 55, quote: "Ticket T-2210 — Heizung Berliner Str. 42, Apt 5" },
-    confidence: 0.95,
-  },
-];
+type Gebaeude = {
+  id: string; hausnr: string; einheiten: number; etagen: number;
+  fahrstuhl: boolean; baujahr: number;
+};
+
+type Einheit = {
+  id: string; haus_id: string; einheit_nr: string; lage: string;
+  typ: string; wohnflaeche_qm: number; zimmer: number;
+  miteigentumsanteil: number;
+};
+
+type Eigentuemer = {
+  id: string; anrede: string; vorname: string; nachname: string;
+  firma: string | null; strasse: string; plz: string; ort: string;
+  land: string; email: string; telefon: string;
+  einheit_ids: string[]; selbstnutzer: boolean;
+  sev_mandat: boolean; beirat: boolean; sprache: string;
+};
+
+type Mieter = {
+  id: string; anrede: string; vorname: string; nachname: string;
+  email: string; telefon: string; einheit_id: string;
+  eigentuemer_id: string; mietbeginn: string; mietende: string | null;
+  kaltmiete: number; nk_vorauszahlung: number; kaution: number;
+  sprache: string;
+};
+
+type Dienstleister = {
+  id: string; firma: string; branche: string; ansprechpartner: string;
+  email: string; telefon: string; strasse: string; plz: string;
+  ort: string; land: string;
+  vertrag_monatlich: number; stundensatz: number;
+};
+
+type Stammdaten = {
+  liegenschaft: Liegenschaft;
+  gebaeude: Gebaeude[];
+  einheiten: Einheit[];
+  eigentuemer: Eigentuemer[];
+  mieter: Mieter[];
+  dienstleister: Dienstleister[];
+};
+
+// ── Seed entry point ────────────────────────────────────────────────────────
 
 export function seedIfEmpty(database: Database.Database): void {
-  const count = database.prepare("SELECT COUNT(*) as n FROM facts").get() as { n: number };
+  const count = database.prepare("SELECT COUNT(*) as n FROM entities").get() as { n: number };
   if (count.n > 0) return;
 
+  if (!fs.existsSync(STAMMDATEN_PATH)) {
+    console.warn(`[hausbuch] stammdaten not found at ${STAMMDATEN_PATH} — seeding with minimal data`);
+    seedMinimal();
+    return;
+  }
+
+  console.log("[hausbuch] seeding from hackathon stammdaten...");
+  const data: Stammdaten = JSON.parse(fs.readFileSync(STAMMDATEN_PATH, "utf8"));
+  const now = new Date().toISOString();
+
   const tx = database.transaction(() => {
-    for (const s of baselineSources) insertSource(s);
-    for (const seed of baselineFacts) {
-      const factId = newFactId();
-      const fact: Fact = {
-        id: factId,
-        entity: ENTITY,
-        predicate: seed.predicate,
-        value: seed.value,
-        unit: seed.unit,
-        valid_from: seed.valid_from,
-        valid_to: seed.valid_to ?? null,
-        known_from: seed.known_from,
-        known_to: null,
-        source: seed.source,
-        span: seed.span,
-        confidence: seed.confidence,
-        superseded_by: null,
-        ident: ident(ENTITY, seed.predicate, seed.valid_from),
-      };
-      insertFact(fact);
-      logEvent("insert", factId, `seed · ${seed.predicate}`);
-    }
+    seedWeg(data.liegenschaft, now);
+    seedBuildings(data.gebaeude, now);
+    seedUnits(data.einheiten, now);
+    seedOwners(data.eigentuemer, now);
+    seedTenants(data.mieter, data.einheiten, now);
+    seedContractors(data.dienstleister, now);
   });
   tx();
+
+  // Bulk imports run outside the main transaction (they're large)
+  importEmails(data);
+  importBankTransactions();
+
+  const entityCount = database.prepare("SELECT COUNT(*) as n FROM entities").get() as { n: number };
+  const factCount = database.prepare("SELECT COUNT(*) as n FROM facts").get() as { n: number };
+  const sourceCount = database.prepare("SELECT COUNT(*) as n FROM sources").get() as { n: number };
+  console.log(`[hausbuch] seed complete: ${entityCount.n} entities, ${factCount.n} facts, ${sourceCount.n} sources`);
 }
 
-/* ----------------------------------------------------------------------------
- * Demo scenarios — exactly the sources the /demo page ingests live, in order.
- * The client POSTs these to /api/ingest; the extractor parses them; the
- * reconciler computes the conflict when both arrive. Nothing is pre-recorded
- * in SQLite; the DB actually grows on stage.
- * -------------------------------------------------------------------------- */
+// ── WEG (Liegenschaft) ──────────────────────────────────────────────────────
+
+function seedWeg(l: Liegenschaft, now: string): void {
+  const entityId = ENTITY;
+  insertEntity({
+    id: entityId, type: "weg", name: l.name,
+    parent_id: null,
+    meta: { plz: l.plz, ort: l.ort, strasse: l.strasse, baujahr: l.baujahr },
+    created_at: now,
+  });
+
+  const src = makeStammdatenSource(`stammdaten:weg:${l.id}`, `Stammdaten: ${l.name}`, now);
+  insertSource(src);
+
+  const facts: Array<[string, string | number | null, string?]> = [
+    ["identity.name", l.name],
+    ["identity.address", `${l.strasse}, ${l.plz} ${l.ort}`],
+    ["identity.baujahr", l.baujahr],
+    ["identity.sanierung", l.sanierung],
+    ["contacts.verwalter", l.verwalter],
+    ["contacts.verwalter.email", l.verwalter_email],
+    ["contacts.verwalter.telefon", l.verwalter_telefon],
+    ["contacts.verwalter.address", `${l.verwalter_strasse}, ${l.verwalter_plz} ${l.verwalter_ort}`],
+  ];
+  for (const [pred, val] of facts) {
+    writeFact(entityId, pred, val ?? null, src.id, String(val ?? ""), now);
+  }
+}
+
+// ── Buildings ───────────────────────────────────────────────────────────────
+
+function seedBuildings(buildings: Gebaeude[], now: string): void {
+  for (const g of buildings) {
+    const entityId = `building:${g.id}`;
+    insertEntity({
+      id: entityId, type: "building", name: `Haus ${g.hausnr}`,
+      parent_id: ENTITY,
+      meta: { hausnr: g.hausnr, etagen: g.etagen, fahrstuhl: g.fahrstuhl },
+      created_at: now,
+    });
+
+    const src = makeStammdatenSource(`stammdaten:building:${g.id}`, `Stammdaten: Haus ${g.hausnr}`, now);
+    insertSource(src);
+
+    writeFact(entityId, "identity.hausnr", g.hausnr, src.id, g.hausnr, now);
+    writeFact(entityId, "identity.einheiten", g.einheiten, src.id, String(g.einheiten), now);
+    writeFact(entityId, "identity.etagen", g.etagen, src.id, String(g.etagen), now);
+    writeFact(entityId, "identity.fahrstuhl", g.fahrstuhl ? "true" : "false", src.id, g.fahrstuhl ? "ja" : "nein", now);
+    writeFact(entityId, "identity.baujahr", g.baujahr, src.id, String(g.baujahr), now);
+  }
+}
+
+// ── Units ───────────────────────────────────────────────────────────────────
+
+function seedUnits(units: Einheit[], now: string): void {
+  for (const u of units) {
+    const entityId = `unit:${u.id}`;
+    insertEntity({
+      id: entityId, type: "unit", name: u.einheit_nr,
+      parent_id: `building:${u.haus_id}`,
+      meta: { lage: u.lage, typ: u.typ, flaeche: u.wohnflaeche_qm, zimmer: u.zimmer },
+      created_at: now,
+    });
+
+    const src = makeStammdatenSource(`stammdaten:unit:${u.id}`, `Stammdaten: ${u.einheit_nr}`, now);
+    insertSource(src);
+
+    writeFact(entityId, "unit.number", u.einheit_nr, src.id, u.einheit_nr, now);
+    writeFact(entityId, "unit.lage", u.lage, src.id, u.lage, now);
+    writeFact(entityId, "unit.typ", u.typ, src.id, u.typ, now);
+    writeFact(entityId, "unit.flaeche", u.wohnflaeche_qm, src.id, `${u.wohnflaeche_qm} m²`, now, "m²");
+    writeFact(entityId, "unit.zimmer", u.zimmer, src.id, String(u.zimmer), now);
+    writeFact(entityId, "unit.miteigentumsanteil", u.miteigentumsanteil, src.id, String(u.miteigentumsanteil), now);
+    writeFact(entityId, "unit.building", u.haus_id, src.id, `Haus ${u.haus_id}`, now);
+  }
+}
+
+// ── Owners ──────────────────────────────────────────────────────────────────
+
+function seedOwners(owners: Eigentuemer[], now: string): void {
+  for (const e of owners) {
+    const entityId = `owner:${e.id}`;
+    const displayName = e.firma || `${e.anrede} ${e.vorname} ${e.nachname}`;
+    insertEntity({
+      id: entityId, type: "owner", name: displayName,
+      meta: { anrede: e.anrede, vorname: e.vorname, nachname: e.nachname, firma: e.firma },
+      created_at: now,
+    });
+
+    const src = makeStammdatenSource(`stammdaten:owner:${e.id}`, `Stammdaten: ${displayName}`, now);
+    insertSource(src);
+
+    writeFact(entityId, "identity.name", `${e.vorname} ${e.nachname}`, src.id, `${e.vorname} ${e.nachname}`, now);
+    if (e.firma) writeFact(entityId, "identity.firma", e.firma, src.id, e.firma, now);
+    writeFact(entityId, "identity.email", e.email, src.id, e.email, now);
+    writeFact(entityId, "identity.telefon", e.telefon, src.id, e.telefon, now);
+    writeFact(entityId, "identity.address", `${e.strasse}, ${e.plz} ${e.ort}`, src.id, `${e.strasse}, ${e.plz} ${e.ort}`, now);
+    writeFact(entityId, "identity.selbstnutzer", e.selbstnutzer ? "true" : "false", src.id, e.selbstnutzer ? "ja" : "nein", now);
+    writeFact(entityId, "identity.sev_mandat", e.sev_mandat ? "true" : "false", src.id, e.sev_mandat ? "ja" : "nein", now);
+    writeFact(entityId, "identity.beirat", e.beirat ? "true" : "false", src.id, e.beirat ? "ja" : "nein", now);
+
+    // Cross-reference: which units does this owner own?
+    for (const unitId of e.einheit_ids) {
+      writeFact(entityId, "ownership.unit", unitId, src.id, unitId, now);
+      // Also write on the unit: who owns it
+      writeFact(`unit:${unitId}`, "unit.owner", e.id, src.id, displayName, now);
+    }
+  }
+}
+
+// ── Tenants ─────────────────────────────────────────────────────────────────
+
+function seedTenants(tenants: Mieter[], units: Einheit[], now: string): void {
+  for (const m of tenants) {
+    const entityId = `tenant:${m.id}`;
+    const displayName = `${m.anrede} ${m.vorname} ${m.nachname}`;
+    insertEntity({
+      id: entityId, type: "tenant", name: displayName,
+      meta: { anrede: m.anrede, vorname: m.vorname, nachname: m.nachname },
+      created_at: now,
+    });
+
+    const src = makeStammdatenSource(`stammdaten:tenant:${m.id}`, `Stammdaten: ${displayName}`, now);
+    insertSource(src);
+
+    writeFact(entityId, "identity.name", `${m.vorname} ${m.nachname}`, src.id, `${m.vorname} ${m.nachname}`, now);
+    writeFact(entityId, "identity.email", m.email, src.id, m.email, now);
+    writeFact(entityId, "identity.telefon", m.telefon, src.id, m.telefon, now);
+    writeFact(entityId, "tenancy.unit", m.einheit_id, src.id, m.einheit_id, now);
+    writeFact(entityId, "tenancy.owner", m.eigentuemer_id, src.id, m.eigentuemer_id, now);
+    writeFact(entityId, "tenancy.start", m.mietbeginn, src.id, m.mietbeginn, now, undefined, m.mietbeginn);
+    if (m.mietende) writeFact(entityId, "tenancy.end", m.mietende, src.id, m.mietende, now, undefined, m.mietende);
+    writeFact(entityId, "tenancy.kaltmiete", m.kaltmiete, src.id, `€${m.kaltmiete.toFixed(2)}`, now, "EUR/month");
+    writeFact(entityId, "tenancy.nebenkosten", m.nk_vorauszahlung, src.id, `€${m.nk_vorauszahlung.toFixed(2)}`, now, "EUR/month");
+    writeFact(entityId, "tenancy.kaution", m.kaution, src.id, `€${m.kaution.toFixed(2)}`, now, "EUR");
+
+    // Cross-reference: write tenant on the unit
+    writeFact(`unit:${m.einheit_id}`, "unit.tenant", m.id, src.id, displayName, now, undefined, m.mietbeginn);
+
+    // Also write rent fact on the unit
+    writeFact(`unit:${m.einheit_id}`, "tenancy.rent.base", m.kaltmiete, src.id, `€${m.kaltmiete.toFixed(2)}/month`, now, "EUR/month", m.mietbeginn);
+  }
+}
+
+// ── Contractors ─────────────────────────────────────────────────────────────
+
+function seedContractors(contractors: Dienstleister[], now: string): void {
+  for (const d of contractors) {
+    const entityId = `contractor:${d.id}`;
+    insertEntity({
+      id: entityId, type: "contractor", name: d.firma,
+      meta: { branche: d.branche, ansprechpartner: d.ansprechpartner },
+      created_at: now,
+    });
+
+    const src = makeStammdatenSource(`stammdaten:contractor:${d.id}`, `Stammdaten: ${d.firma}`, now);
+    insertSource(src);
+
+    writeFact(entityId, "identity.firma", d.firma, src.id, d.firma, now);
+    writeFact(entityId, "identity.branche", d.branche, src.id, d.branche, now);
+    writeFact(entityId, "identity.ansprechpartner", d.ansprechpartner, src.id, d.ansprechpartner, now);
+    writeFact(entityId, "identity.email", d.email, src.id, d.email, now);
+    writeFact(entityId, "identity.telefon", d.telefon, src.id, d.telefon, now);
+    writeFact(entityId, "identity.address", `${d.strasse}, ${d.plz} ${d.ort}`, src.id, `${d.strasse}, ${d.plz} ${d.ort}`, now);
+    if (d.vertrag_monatlich > 0) writeFact(entityId, "contract.monthly", d.vertrag_monatlich, src.id, `€${d.vertrag_monatlich.toFixed(2)}`, now, "EUR/month");
+    if (d.stundensatz > 0) writeFact(entityId, "contract.hourly_rate", d.stundensatz, src.id, `€${d.stundensatz.toFixed(2)}`, now, "EUR/hour");
+  }
+}
+
+// ── Email bulk import ───────────────────────────────────────────────────────
+
+function importEmails(data: Stammdaten): void {
+  // Build email → entity lookup from stammdaten
+  const emailToEntity = new Map<string, string>();
+  emailToEntity.set(data.liegenschaft.verwalter_email, ENTITY);
+  for (const e of data.eigentuemer) emailToEntity.set(e.email, `owner:${e.id}`);
+  for (const m of data.mieter) emailToEntity.set(m.email, `tenant:${m.id}`);
+  for (const d of data.dienstleister) emailToEntity.set(d.email, `contractor:${d.id}`);
+
+  // Import historical emails (pre-2026 archive)
+  const emailsDir = path.join(HACKATHON_DIR, "emails");
+  if (fs.existsSync(emailsDir)) {
+    let count = 0;
+    const months = fs.readdirSync(emailsDir).filter(d => !d.startsWith(".")).sort();
+    for (const month of months) {
+      const monthDir = path.join(emailsDir, month);
+      if (!fs.statSync(monthDir).isDirectory()) continue;
+      const files = fs.readdirSync(monthDir).filter(f => f.endsWith(".eml"));
+      for (const file of files) {
+        const filePath = path.join(monthDir, file);
+        importSingleEmail(filePath, file, emailToEntity);
+        count++;
+      }
+    }
+    console.log(`[hausbuch] imported ${count} historical emails`);
+  }
+
+  // Import incremental emails (10-day scenario)
+  const incrDir = path.join(HACKATHON_DIR, "incremental");
+  if (fs.existsSync(incrDir)) {
+    let count = 0;
+    const days = fs.readdirSync(incrDir).filter(d => d.startsWith("day-")).sort();
+    for (const day of days) {
+      const dayDir = path.join(incrDir, day);
+      // Read index for category + thread info
+      const indexPath = path.join(dayDir, "emails_index.csv");
+      const emailIndex = fs.existsSync(indexPath) ? parseEmailIndex(indexPath) : new Map();
+
+      // Incremental emails live at: incremental/day-XX/emails/MONTH/FILE.eml
+      for (const [, meta] of emailIndex) {
+        const filename = meta.filename;
+        if (!filename) continue;
+        const monthDir = meta.month_dir ?? "";
+        const candidates = [
+          path.join(dayDir, "emails", monthDir, filename),
+          path.join(dayDir, filename),
+          path.join(HACKATHON_DIR, "emails", monthDir, filename),
+        ];
+        let imported = false;
+        for (const p of candidates) {
+          if (fs.existsSync(p)) {
+            importSingleEmail(p, filename, emailToEntity, meta);
+            count++;
+            imported = true;
+            break;
+          }
+        }
+        if (!imported) {
+          // Still record the metadata as a source even without the file
+          const entityId = emailToEntity.get(meta.id ?? "") ?? ENTITY;
+          const sourceId = newSourceId(filename);
+          insertSource({
+            id: sourceId, kind: "email", title: meta.subject ?? filename,
+            ingested_at: new Date().toISOString(),
+            raw_excerpt: `[Subject: ${meta.subject ?? filename}]`,
+            source_prior: 0.7,
+            entity_id: entityId,
+            thread_id: meta.thread_id,
+            category: meta.category,
+            direction: meta.direction,
+            from_addr: meta.id,
+          });
+        }
+      }
+    }
+    console.log(`[hausbuch] imported ${count} incremental emails`);
+  }
+}
+
+type EmailMeta = {
+  id?: string;
+  thread_id?: string;
+  direction?: "incoming" | "outgoing";
+  category?: string;
+  filename?: string;
+  month_dir?: string;
+  subject?: string;
+};
+
+function parseEmailIndex(csvPath: string): Map<string, EmailMeta> {
+  const map = new Map<string, EmailMeta>();
+  const lines = fs.readFileSync(csvPath, "utf8").split("\n");
+  if (lines.length < 2) return map;
+  const headers = lines[0].split(",");
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(",");
+    if (cols.length < 2) continue;
+    const row: Record<string, string> = {};
+    for (let j = 0; j < headers.length && j < cols.length; j++) {
+      row[headers[j].trim()] = cols[j].trim();
+    }
+    map.set(row.id ?? "", {
+      id: row.id,
+      thread_id: row.thread_id,
+      direction: (row.direction as "incoming" | "outgoing") || undefined,
+      category: row.category,
+      filename: row.filename,
+      month_dir: row.month_dir,
+      subject: row.subject,
+    });
+  }
+  return map;
+}
+
+function importSingleEmail(
+  filePath: string,
+  filename: string,
+  emailToEntity: Map<string, string>,
+  meta?: EmailMeta,
+): void {
+  try {
+    const raw = fs.readFileSync(filePath, "utf8");
+    const headers = parseEmailHeaders(raw);
+    const body = extractEmailBody(raw);
+
+    // Resolve entity from sender/recipient email
+    const fromAddr = headers.from_email ?? meta?.id ?? "";
+    const toAddr = headers.to_email ?? "";
+    // For incoming: the entity is the sender (tenant/owner/contractor)
+    // For outgoing: the entity is the recipient
+    const direction = meta?.direction ?? (fromAddr.includes("huber-partner") ? "outgoing" : "incoming");
+    const relevantAddr = direction === "incoming" ? fromAddr : toAddr;
+    const entityId = emailToEntity.get(relevantAddr) ?? ENTITY;
+
+    const sourceId = newSourceId(filename);
+    const source: Source = {
+      id: sourceId,
+      kind: "email",
+      title: headers.subject || filename,
+      ingested_at: headers.date || new Date().toISOString(),
+      raw_excerpt: body.slice(0, 4096),
+      source_prior: 0.7,
+      entity_id: entityId,
+      thread_id: meta?.thread_id,
+      category: meta?.category,
+      direction,
+      from_addr: fromAddr,
+      to_addr: toAddr,
+    };
+    insertSource(source);
+
+    // Extract basic facts from the email based on category
+    extractEmailFacts(entityId, source, body, meta?.category);
+  } catch {
+    // Skip malformed emails silently
+  }
+}
+
+function parseEmailHeaders(raw: string): { from_email?: string; to_email?: string; subject?: string; date?: string } {
+  const headerEnd = raw.indexOf("\n\n");
+  const headerBlock = headerEnd >= 0 ? raw.slice(0, headerEnd) : raw.slice(0, 500);
+  // Unfold continuation lines
+  const unfolded = headerBlock.replace(/\r?\n\s+/g, " ");
+
+  const fromMatch = unfolded.match(/^From:\s*.*?<?([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+)>?/im);
+  const toMatch = unfolded.match(/^To:\s*.*?<?([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+)>?/im);
+  const subjMatch = unfolded.match(/^Subject:\s*(.+)/im);
+  const dateMatch = unfolded.match(/^Date:\s*(.+)/im);
+
+  return {
+    from_email: fromMatch?.[1]?.toLowerCase(),
+    to_email: toMatch?.[1]?.toLowerCase(),
+    subject: subjMatch?.[1]?.trim().replace(/=\?utf-8\?q\?(.*?)\?=/gi, (_, enc) =>
+      enc.replace(/=([0-9A-Fa-f]{2})/g, (_: string, hex: string) => String.fromCharCode(parseInt(hex, 16))).replace(/_/g, " ")
+    ),
+    date: dateMatch?.[1]?.trim() ? new Date(dateMatch[1].trim()).toISOString() : undefined,
+  };
+}
+
+function extractEmailBody(raw: string): string {
+  const idx = raw.indexOf("\n\n");
+  if (idx < 0) return raw;
+  return raw.slice(idx + 2)
+    .replace(/=\r?\n/g, "") // quoted-printable soft line breaks
+    .replace(/=([0-9A-Fa-f]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .trim();
+}
+
+function extractEmailFacts(entityId: string, source: Source, body: string, category?: string): void {
+  const now = source.ingested_at;
+  const text = (body + " " + (source.title ?? "")).toLowerCase();
+  const cat = (category ?? "").toLowerCase();
+
+  // ── Incident detection (from body keywords OR category) ─────────────
+  const isSchaden = cat.includes("schaden") || cat.includes("mangel");
+  const hasMold = /schimmel|mold|schimmelbefall/i.test(text);
+  const hasWater = /wasser|water|feucht|wasserschaden/i.test(text);
+  const hasLock = /schloss|schluessel|tuer.*schliesst|haustuer|lock|key/i.test(text);
+  const hasHeating = /heizung|heating|thermostat/i.test(text);
+  const hasElevator = /aufzug|elevator|fahrstuhl/i.test(text);
+  const hasNoise = /ruhestoerung|laerm|noise/i.test(text);
+
+  if (isSchaden || hasMold || hasWater || hasLock || hasHeating || hasElevator) {
+    const type = hasMold ? "mold" :
+                 hasWater ? "water_damage" :
+                 hasLock ? "lock_issue" :
+                 hasHeating ? "heating" :
+                 hasElevator ? "elevator" :
+                 hasNoise ? "noise" : "other";
+    writeFact(entityId, "incident.type", type, source.id, body.slice(0, 120), now);
+    writeFact(entityId, "incident.status", "reported", source.id, "gemeldet", now);
+  }
+
+  // ── Legal issues ────────────────────────────────────────────────────
+  if (cat.includes("kuendigung") || /kuendigung|k.ndigung/i.test(text)) {
+    writeFact(entityId, "legal.kuendigung", "true", source.id, body.slice(0, 120), now);
+  }
+
+  if (/mietminderung|rent\s*reduction|miete.*minder/i.test(text)) {
+    writeFact(entityId, "legal.mietminderung", "true", source.id, body.slice(0, 120), now);
+    const pctMatch = body.match(/(\d{1,2})\s*%/);
+    if (pctMatch) writeFact(entityId, "legal.mietminderung.prozent", Number(pctMatch[1]), source.id, `${pctMatch[1]}%`, now);
+  }
+
+  if (/sonderumlage|einspruch/i.test(text)) {
+    writeFact(entityId, "legal.sonderumlage_dispute", "true", source.id, body.slice(0, 120), now);
+  }
+
+  // ── Financial ───────────────────────────────────────────────────────
+  if (cat.includes("rechnung") || /rechnung|invoice|RE-\d{4}/i.test(text)) {
+    const amtMatch = body.match(/(\d{1,6}[.,]\d{2})\s*(?:EUR|€)/);
+    if (amtMatch) writeFact(entityId, "financial.invoice.amount", amtMatch[1].replace(",", "."), source.id, `€${amtMatch[1]}`, now, "EUR");
+  }
+
+  if (cat.includes("mahnung") || /mahnung|overdue|zahlungserinnerung/i.test(text)) {
+    writeFact(entityId, "financial.mahnung", "true", source.id, body.slice(0, 120), now);
+  }
+
+  // ── Ownership / property changes ────────────────────────────────────
+  if (/verkauf|sale|verkaufsabsicht/i.test(text)) {
+    writeFact(entityId, "legal.verkaufsabsicht", "true", source.id, body.slice(0, 120), now);
+  }
+
+  if (/mieterwechsel|tenant.*change/i.test(text)) {
+    writeFact(entityId, "tenancy.mieterwechsel", "true", source.id, body.slice(0, 120), now);
+  }
+
+  // Always record a communication fact so the email shows up in context
+  writeFact(entityId, "communication.email", source.id, source.id, source.title, now);
+}
+
+// ── Bank transaction import ─────────────────────────────────────────────────
+
+function importBankTransactions(): void {
+  const bankIndexPath = path.join(HACKATHON_DIR, "bank", "bank_index.csv");
+  if (!fs.existsSync(bankIndexPath)) return;
+
+  const lines = fs.readFileSync(bankIndexPath, "utf8").split("\n");
+  if (lines.length < 2) return;
+  const headers = lines[0].split(",");
+
+  let count = 0;
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(",");
+    if (cols.length < 3) continue;
+    const row: Record<string, string> = {};
+    for (let j = 0; j < headers.length && j < cols.length; j++) {
+      row[headers[j].trim()] = cols[j].trim();
+    }
+
+    const txId = row.id;
+    const date = row.datum;
+    const type = row.typ;
+    const amount = parseFloat(row.betrag || "0");
+    const category = row.kategorie;
+    const counterparty = row.gegen_name;
+    const purpose = row.verwendungszweck;
+    const refId = row.referenz_id;
+
+    if (!txId || !date) continue;
+
+    // Determine which entity this transaction relates to
+    let entityId = ENTITY;
+    if (refId?.startsWith("MIE-")) entityId = `tenant:${refId}`;
+    else if (refId?.startsWith("DL-")) entityId = `contractor:${refId}`;
+
+    const sourceId = `src:bank:${txId}`;
+    try {
+      insertSource({
+        id: sourceId,
+        kind: "bank",
+        title: `${type === "CREDIT" ? "↓" : "↑"} ${purpose}`,
+        ingested_at: `${date}T12:00:00Z`,
+        raw_excerpt: `${date} | ${type} | €${amount.toFixed(2)} | ${counterparty} | ${purpose}`,
+        source_prior: 0.95,
+        entity_id: entityId,
+        category: category,
+      });
+
+      writeFact(entityId, `financial.${category || "transaction"}`, amount, sourceId, `€${amount.toFixed(2)} — ${purpose}`, `${date}T12:00:00Z`, type === "CREDIT" ? "EUR" : "EUR", date);
+      count++;
+    } catch {
+      // Skip duplicates silently
+    }
+  }
+  console.log(`[hausbuch] imported ${count} bank transactions`);
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+function makeStammdatenSource(id: string, title: string, now: string): Source {
+  return {
+    id,
+    kind: "stammdaten",
+    title,
+    ingested_at: now,
+    raw_excerpt: title,
+    source_prior: 0.95,
+  };
+}
+
+function writeFact(
+  entity: string,
+  predicate: string,
+  value: string | number | boolean | null,
+  sourceId: string,
+  quote: string,
+  knownFrom: string,
+  unit?: string,
+  validFrom?: string,
+): void {
+  const factId = newFactId();
+  const fact: Fact = {
+    id: factId,
+    entity,
+    predicate,
+    value,
+    unit,
+    valid_from: validFrom ?? null,
+    valid_to: null,
+    known_from: knownFrom,
+    known_to: null,
+    source: sourceId,
+    span: { start: 0, end: quote.length, quote },
+    confidence: 0.9,
+    superseded_by: null,
+    ident: ident(entity, predicate, validFrom ?? null),
+  };
+  insertFact(fact);
+  logEvent("insert", factId, `seed · ${predicate}`);
+}
+
+// ── Minimal seed (fallback when hackathon data isn't available) ─────────────
+
+function seedMinimal(): void {
+  const now = new Date().toISOString();
+  insertEntity({
+    id: ENTITY, type: "weg", name: "WEG Immanuelkirchstraße 26",
+    meta: { plz: "10405", ort: "Berlin" },
+    created_at: now,
+  });
+  const src = makeStammdatenSource("stammdaten:minimal", "Minimal seed", now);
+  insertSource(src);
+  writeFact(ENTITY, "identity.name", "WEG Immanuelkirchstraße 26", src.id, "WEG Immanuelkirchstraße 26", now);
+  writeFact(ENTITY, "identity.address", "Immanuelkirchstraße 26, 10405 Berlin", src.id, "Immanuelkirchstraße 26, 10405 Berlin", now);
+}
+
+// ── Demo scenarios (kept for backwards compat) ──────────────────────────────
 
 export type ScenarioSource = {
-  id: string;
-  label: string;
-  date: string;
-  icon: string;
-  blurb: string;
-  kind: SourceKind;
-  title: string;
-  raw_excerpt: string;
-  source_prior: number;
+  id: string; label: string; date: string; icon: string; blurb: string;
+  kind: SourceKind; title: string; raw_excerpt: string; source_prior: number;
 };
 
 export const DEMO_SCENARIOS: ScenarioSource[] = [
   {
-    id: "landlord-email",
-    label: "landlord email",
-    date: "2026-04-18",
-    icon: "✉",
-    blurb:
-      "Landlord announces rent increase to €1,800 effective 2026-06-01 (source_prior = 0.65)",
+    id: "mold-report",
+    label: "Schimmel-Meldung",
+    date: "2026-01-03",
+    icon: "⚠",
+    blurb: "Tenant Magrit Mitschke reports mold + water damage in WE 32, threatens 15% rent reduction",
     kind: "email",
-    title: "email:landlord@müller.de 2026-04-18",
+    title: "Mietminderung Ankuendigung — Magrit Mitschke",
     raw_excerpt:
-      "Von: landlord@müller.de. An: verwalter@schulz-hausverwaltung.de. Betreff: Mieterhöhung Apt 3. " +
-      "— Ab dem 1. Juni 2026 wird die monatliche Miete auf 1.800 EUR erhöht. " +
-      "Mit freundlichen Grüßen, H. Müller.",
-    source_prior: 0.65,
+      "Sehr geehrte Verwaltung, da die Baumaengel (Wasserschaden, Schimmel) in meiner Wohnung WE 32 seit ueber 3 Monaten nicht behoben sind, werde ich die Miete ab 02.02.2026 um 15% mindern. Eine rechtliche Grundlage liegt aus meiner Sicht vor. Magrit Mitschke",
+    source_prior: 0.7,
   },
   {
-    id: "legal-memo",
-    label: "legal memo",
-    date: "2026-04-22",
-    icon: "⚖",
-    blurb:
-      "Counsel cites §Mietpreisbremse (BGB §556d) — caps 2026 rent at €1,650 (source_prior = 0.94)",
-    kind: "legal",
-    title: "legal-memo-2026.pdf",
+    id: "door-broken",
+    label: "Haustür defekt",
+    date: "2026-01-08",
+    icon: "🔒",
+    blurb: "Front door of Haus 16 won't close — security concern reported by Galina Wohlgemut",
+    kind: "email",
+    title: "Haustuer schliesst nicht — Galina Wohlgemut",
     raw_excerpt:
-      "Memo · Kanzlei Weber & Kollegen, 2026-04-22. Betreff: Mietpreisbremse Berliner Str. 42 Apt 3. §4 — " +
-      "Gemäß § Mietpreisbremse (BGB §556d) ist die zulässige Miete ab dem 1. Juni 2026 auf EUR 1.650,00 gedeckelt. " +
-      "Der vom Vermieter geforderte Betrag von EUR 1.800 ist nicht durchsetzbar.",
-    source_prior: 0.94,
+      "Guten Abend, die Haustuer von Haus 16 schliesst seit heute Mittag nicht mehr selbststaendig. Das ist sicherheitstechnisch problematisch. Galina Wohlgemut",
+    source_prior: 0.7,
+  },
+  {
+    id: "key-loss",
+    label: "Schlüsselverlust",
+    date: "2026-01-10",
+    icon: "🔑",
+    blurb: "Tenant Marliese Hermann (WE 02) lost key — Schließanlage may need replacing",
+    kind: "email",
+    title: "Schluesselverlust — Marliese Hermann",
+    raw_excerpt:
+      "Hallo, ich habe leider meinen Wohnungsschluessel verloren. Die Schliessanlage muesste wahrscheinlich getauscht werden. Wie gehe ich am besten vor? Gruesse Marliese Hermann WE 02",
+    source_prior: 0.65,
   },
 ];

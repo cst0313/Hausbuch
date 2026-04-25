@@ -1,6 +1,7 @@
 // path: src/app/api/queue/[id]/reject/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { db, getProposal, logEvent, updateProposalStatus } from "@/lib/db";
+import { recordAction } from "@/lib/actions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,6 +43,14 @@ export async function POST(
 
   logEvent("revoke", proposal.id, `proposal-rejected by=${resolvedBy}`);
   const updated = updateProposalStatus(proposal.id, "rejected", resolvedBy);
+
+  recordAction({
+    actor: "user",
+    action: "proposal.reject",
+    entity: proposal.entity,
+    target: proposal.id,
+    input: { kind: proposal.kind, resolved_by: resolvedBy },
+  });
 
   return NextResponse.json({ proposal: updated });
 }

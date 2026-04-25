@@ -1,5 +1,5 @@
-// path: src/components/LumenMark.tsx
-export function LumenMark({ size = 16 }: { size?: number }) {
+// path: src/components/HausbuchMark.tsx
+export function HausbuchMark({ size = 16 }: { size?: number }) {
   return (
     <div className="flex items-center gap-2.5">
       <div className="relative" style={{ width: size, height: size }}>
@@ -24,7 +24,7 @@ export function LumenMark({ size = 16 }: { size?: number }) {
         className="font-serif italic tracking-tight"
         style={{ fontSize: size * 1.15, lineHeight: 1 }}
       >
-        Lumen
+        Hausbuch
       </span>
     </div>
   );

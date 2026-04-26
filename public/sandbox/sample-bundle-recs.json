@@ -1,0 +1,240 @@
+{
+  "summary": {
+    "files_total": 7,
+    "files_processed": 7,
+    "facts_added": 87,
+    "entities_touched": 6,
+    "open_recs": 4
+  },
+  "recommendations": [
+    {
+      "id": "sandbox:rec:tenant:MIE-022:mahnung",
+      "severity": "critical",
+      "entity_id": "tenant:MIE-022",
+      "entity_name": "Herr Carsten Austermühle",
+      "entity_type": "tenant",
+      "category": "financial.mahnung",
+      "title": "Mahnung — Mietrückstand 2 Monate",
+      "title_en": "Dunning — 2 months of rent in arrears",
+      "summary": "Carsten Austermühle hat seit zwei Monaten keine Miete gezahlt. Mahnstufe 2 — gerichtliches Verfahren droht innerhalb von 14 Tagen.",
+      "summary_en": "Carsten Austermühle is two months in arrears on rent. Dunning stage 2 — court action threatened within 14 days.",
+      "facts": [
+        {
+          "predicate": "mahnung.stufe",
+          "value": "2",
+          "source_title": "02_mahnung_austermuehle",
+          "known_from": "2025-12-15T09:00:00.000Z",
+          "valid_from": "2025-12-15"
+        },
+        {
+          "predicate": "mahnung.frist_tage",
+          "value": "14",
+          "source_title": "02_mahnung_austermuehle",
+          "known_from": "2025-12-15T09:00:00.000Z"
+        },
+        {
+          "predicate": "mahnung.offener_betrag",
+          "value": "1722.00",
+          "source_title": "02_mahnung_austermuehle",
+          "known_from": "2025-12-15T09:00:00.000Z"
+        }
+      ],
+      "email_chain": [
+        {
+          "source_id": "sandbox:src:02_mahnung_austermuehle",
+          "title": "02_mahnung_austermuehle",
+          "from": "Huber & Partner Immobilienverwaltung",
+          "date": "2025-12-15T09:00:00.000Z",
+          "excerpt": "Sehr geehrter Herr Austermühle, hiermit mahnen wir den ausstehenden Mietzins für die Monate November und Dezember 2025 in Höhe von €1.722,00 an. Bitte begleichen Sie den Betrag innerhalb von 14 Tagen, andernfalls werden wir gerichtliche Schritte einleiten."
+        }
+      ],
+      "actions": [
+        {
+          "type": "draft_email",
+          "label": "Final notice to Austermühle",
+          "label_de": "Letzte Mahnung an Austermühle",
+          "draft_context": {
+            "from": "Huber & Partner Immobilienverwaltung GmbH <info@huber-partner-verwaltung.de>",
+            "to": "Herr Carsten Austermühle",
+            "to_email": "carsten.austermuehle@email.de",
+            "subject": "Letzte Mahnung — Mietrückstand WE 23",
+            "incident_summary": "Mahnstufe 2 erreicht; Mietrückstand €1.722. Frist 14 Tage, danach Gerichtsverfahren.",
+            "entity_context": "Mieter: Carsten Austermühle. Status: 2 Monate Rückstand.",
+            "language": "de",
+            "tone": "formal"
+          }
+        },
+        {
+          "type": "escalate",
+          "label": "Hand off to legal counsel",
+          "label_de": "An Anwalt übergeben"
+        }
+      ],
+      "created_at": "2025-12-15T09:00:00.000Z"
+    },
+    {
+      "id": "sandbox:rec:tenant:we49:kuendigung",
+      "severity": "high",
+      "entity_id": "tenant:we49",
+      "entity_name": "Mieter WE 49",
+      "entity_type": "tenant",
+      "category": "legal.kuendigung",
+      "title": "Kündigung eingegangen — WE 49",
+      "title_en": "Termination received — WE 49",
+      "summary": "Schriftliche Kündigung mit ordentlicher Frist eingegangen. Übergabetermin und Nachmietersuche einleiten.",
+      "summary_en": "Written termination received with proper notice. Schedule handover and start tenant search.",
+      "facts": [
+        {
+          "predicate": "kuendigung.kuendigungsdatum",
+          "value": "2026-03-31",
+          "source_title": "07_kuendigung_we49",
+          "known_from": "2026-01-02T11:30:00.000Z",
+          "valid_from": "2026-03-31"
+        },
+        {
+          "predicate": "kuendigung.art",
+          "value": "ordentlich",
+          "source_title": "07_kuendigung_we49",
+          "known_from": "2026-01-02T11:30:00.000Z"
+        }
+      ],
+      "email_chain": [
+        {
+          "source_id": "sandbox:src:07_kuendigung_we49",
+          "title": "07_kuendigung_we49",
+          "from": "Mieter WE 49",
+          "date": "2026-01-02T11:30:00.000Z",
+          "excerpt": "Sehr geehrte Damen und Herren, hiermit kündige ich den Mietvertrag für die Wohnung WE 49 fristgerecht zum 31.03.2026. Bitte bestätigen Sie mir den Kündigungstermin schriftlich."
+        }
+      ],
+      "actions": [
+        {
+          "type": "draft_email",
+          "label": "Confirm termination",
+          "label_de": "Kündigungsbestätigung",
+          "draft_context": {
+            "from": "Huber & Partner Immobilienverwaltung GmbH <info@huber-partner-verwaltung.de>",
+            "to": "Mieter WE 49",
+            "to_email": "",
+            "subject": "Kündigungsbestätigung — WE 49",
+            "incident_summary": "Kündigung WE 49 zum 31.03.2026 bestätigen. Übergabetermin innerhalb von 14 Tagen vorschlagen.",
+            "entity_context": "Mieter WE 49. Ordentliche Kündigung. Nachmietersuche starten.",
+            "language": "de",
+            "tone": "formal"
+          }
+        },
+        {
+          "type": "follow_up",
+          "label": "Schedule handover",
+          "label_de": "Übergabetermin vereinbaren"
+        }
+      ],
+      "created_at": "2026-01-02T11:30:00.000Z"
+    },
+    {
+      "id": "sandbox:rec:owner:eh018:hausgeld",
+      "severity": "medium",
+      "entity_id": "owner:eh018",
+      "entity_name": "Eigentümer EH 018",
+      "entity_type": "owner",
+      "category": "financial.hausgeld",
+      "title": "Hausgeld 2025 — Abrechnung erstellt",
+      "title_en": "Hausgeld 2025 — settlement issued",
+      "summary": "Jahresabrechnung 2025 erstellt. Nachzahlung €312,80; Zahlungsfrist 30 Tage.",
+      "summary_en": "2025 annual statement issued. Outstanding €312.80 due within 30 days.",
+      "facts": [
+        {
+          "predicate": "hausgeld.gesamtkosten",
+          "value": "5159.98",
+          "source_title": "04_hausgeld_eh018",
+          "known_from": "2026-01-08T10:00:00.000Z",
+          "valid_from": "2025-01-01"
+        },
+        {
+          "predicate": "hausgeld.nachzahlung",
+          "value": "312.80",
+          "source_title": "04_hausgeld_eh018",
+          "known_from": "2026-01-08T10:00:00.000Z"
+        }
+      ],
+      "email_chain": [
+        {
+          "source_id": "sandbox:src:04_hausgeld_eh018",
+          "title": "04_hausgeld_eh018",
+          "from": "Huber & Partner Immobilienverwaltung",
+          "date": "2026-01-08T10:00:00.000Z",
+          "excerpt": "Sehr geehrte/r Eigentümer/in EH 018, anbei erhalten Sie die Hausgeldabrechnung für das Wirtschaftsjahr 2025. Auf Basis Ihres Miteigentumsanteils ergibt sich eine Nachzahlung von €312,80."
+        }
+      ],
+      "actions": [
+        {
+          "type": "follow_up",
+          "label": "Track payment of €312.80",
+          "label_de": "Zahlung €312,80 verfolgen"
+        }
+      ],
+      "created_at": "2026-01-08T10:00:00.000Z"
+    },
+    {
+      "id": "sandbox:rec:tenant:we23:mieterhoehung",
+      "severity": "medium",
+      "entity_id": "tenant:we23",
+      "entity_name": "Mieter WE 23",
+      "entity_type": "tenant",
+      "category": "legal.mieterhoehung",
+      "title": "Mieterhöhung angekündigt — WE 23",
+      "title_en": "Rent increase announced — WE 23",
+      "summary": "Mieterhöhungsverlangen verschickt. Neue Kaltmiete €920 ab 01.04.2026; Zustimmungsfrist 2 Monate.",
+      "summary_en": "Rent-increase request sent. New net rent €920 from 1 Apr 2026; 2-month deadline for consent.",
+      "facts": [
+        {
+          "predicate": "mieterhoehung.neue_kaltmiete",
+          "value": "920.00",
+          "source_title": "03_mieterhoehung_we23",
+          "known_from": "2026-01-12T11:00:00.000Z",
+          "valid_from": "2026-04-01"
+        },
+        {
+          "predicate": "mieterhoehung.zustimmungsfrist",
+          "value": "2026-03-31",
+          "source_title": "03_mieterhoehung_we23",
+          "known_from": "2026-01-12T11:00:00.000Z"
+        }
+      ],
+      "email_chain": [
+        {
+          "source_id": "sandbox:src:03_mieterhoehung_we23",
+          "title": "03_mieterhoehung_we23",
+          "from": "Huber & Partner Immobilienverwaltung",
+          "date": "2026-01-12T11:00:00.000Z",
+          "excerpt": "Sehr geehrte/r Mieter/in WE 23, hiermit verlangen wir gemäß §558 BGB Ihre Zustimmung zur Erhöhung der Kaltmiete auf €920,00 ab dem 01.04.2026. Bitte teilen Sie uns Ihre Zustimmung innerhalb von 2 Monaten schriftlich mit."
+        }
+      ],
+      "actions": [
+        {
+          "type": "follow_up",
+          "label": "Track tenant consent (deadline 31 Mar 2026)",
+          "label_de": "Mieterzustimmung verfolgen (Frist 31.03.2026)"
+        }
+      ],
+      "created_at": "2026-01-12T11:00:00.000Z"
+    }
+  ],
+  "info_only": [
+    {
+      "title": "01_etv_einladung",
+      "kind": "letter",
+      "summary": "Einladung zur Eigentümerversammlung — Tagesordnung ingested as facts on the WEG. No tenant action needed."
+    },
+    {
+      "title": "05_bka_mitschke",
+      "kind": "letter",
+      "summary": "Betriebskostenabrechnung 2025 für Magrit Mitschke — added 18 nebenkosten facts to the tenant. No outstanding amount."
+    },
+    {
+      "title": "06_invoice_wasserbetriebe",
+      "kind": "invoice",
+      "summary": "Berliner Wasserbetriebe quarterly invoice — €1.842,30. Booked against the WEG account, no manager action."
+    }
+  ]
+}

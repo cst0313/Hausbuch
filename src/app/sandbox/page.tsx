@@ -1,42 +1,63 @@
 // path: src/app/sandbox/page.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Nav } from "@/components/Nav";
 import { UploadInspector } from "@/components/UploadInspector";
 import { AddEntityModal } from "@/components/AddEntityModal";
 import { CmdK } from "@/components/CmdK";
 
-type Counts = {
-  facts: number;
-  sources: number;
-  entities: number;
-  open: number;
-  critical: number;
-};
-
 type SandboxRec = {
   id: string;
   severity: "critical" | "high" | "medium" | "low";
   entity_id: string;
   entity_name: string;
+  entity_type?: string;
   category: string;
   title: string;
+  title_en?: string;
   summary: string;
-  email_chain?: Array<{ source_id: string; title: string; date?: string }>;
+  summary_en?: string;
+  facts?: Array<{ predicate: string; value: string; source_title: string; known_from: string; valid_from?: string | null }>;
+  email_chain?: Array<{ source_id: string; title: string; from?: string; date?: string; excerpt?: string }>;
+  actions?: Array<{ type: string; label: string; label_de: string; draft_context?: unknown }>;
+  created_at?: string;
 };
 
+type SandboxSummary = {
+  files_total: number;
+  files_processed: number;
+  facts_added: number;
+  entities_touched: number;
+  open_recs: number;
+};
+
+type SampleFixture = {
+  summary: SandboxSummary;
+  recommendations: SandboxRec[];
+  info_only?: Array<{ title: string; kind: string; summary: string }>;
+};
+
+type SandboxState = "empty" | "sample" | "uploaded";
+
 export default function SandboxPage() {
-  const [counts, setCounts] = useState<Counts | null>(null);
-  const [busy, setBusy] = useState<"idle" | "wiping" | "loading-sample">("idle");
+  // sandboxStartedAt tracks when this session opened, so when the user
+  // uploads a real file we can filter /api/recommendations to recs
+  // whose triggering source landed AFTER the session started — keeps
+  // the seeded corpus's 200+ recs out of the sandbox view.
+  const sandboxStartedAt = useRef(new Date().toISOString());
+
+  const [state, setState] = useState<SandboxState>("empty");
+  const [recs, setRecs] = useState<SandboxRec[]>([]);
+  const [summary, setSummary] = useState<SandboxSummary | null>(null);
+  const [infoOnly, setInfoOnly] = useState<SampleFixture["info_only"]>([]);
+  const [busy, setBusy] = useState<"idle" | "loading-sample" | "wiping">("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
-  const [recs, setRecs] = useState<SandboxRec[] | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
 
-  // ⌘K / Ctrl+K opens the agent palette. Mirrors the dashboard's binding
-  // so the user gets the same affordance everywhere recs are visible.
+  // ⌘K / "/" opens the agent palette inside the sandbox tab.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -51,83 +72,24 @@ export default function SandboxPage() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-  const [refresh, setRefresh] = useState(0);
 
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/stats")
-      .then((r) => r.json())
-      .then((d) => {
-        if (cancelled) return;
-        setCounts({
-          facts: d.facts ?? 0,
-          sources: d.sources ?? 0,
-          entities: d.entities ?? 0,
-          open: d.open ?? 0,
-          critical: d.critical ?? 0,
-        });
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [refresh]);
-
-  // Pull recommendations from the same /api/recommendations the dashboard uses,
-  // so the sandbox shows the manager-view of whatever the user has uploaded.
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/recommendations")
-      .then((r) => r.json())
-      .then((d) => {
-        if (cancelled) return;
-        setRecs(d?.recommendations ?? []);
-      })
-      .catch(() => {
-        if (!cancelled) setRecs([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [refresh]);
-
-  const wipe = async () => {
-    if (!confirm("Wipe the entire database to an empty engine? This cannot be undone — only use during a demo session.")) {
-      return;
-    }
-    setBusy("wiping");
-    setMessage(null);
-    try {
-      const r = await fetch("/api/sandbox/empty", { method: "POST" });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      setMessage("Engine wiped. Drop a document below to start populating it.");
-      setRefresh((n) => n + 1);
-    } catch (err) {
-      setMessage(`Wipe failed: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setBusy("idle");
-    }
-  };
-
+  /**
+   * Sample bundle: served as a precomputed JSON fixture so loading is
+   * instant — no engine round trip, no waiting for /api/recommendations.
+   * The fixture lives at /public/sandbox/sample-bundle-recs.json and
+   * mirrors what the engine WOULD produce from the 7 PDFs (Mahnung,
+   * Kündigung, Hausgeld, Mieterhöhung; plus three info-only sources).
+   */
   const loadSample = async () => {
     setBusy("loading-sample");
     setMessage(null);
     try {
-      const blob = await fetch("/sandbox/sample-bundle.zip").then((r) => {
-        if (!r.ok) throw new Error("sample bundle not found");
-        return r.blob();
-      });
-      const fd = new FormData();
-      fd.append("file", blob, "sample-bundle.zip");
-      const r = await fetch("/api/upload-bulk", { method: "POST", body: fd });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.error ?? `HTTP ${r.status}`);
-      setMessage(
-        `Loaded ${data.files_processed ?? data.files_ingested ?? "?"} of ${
-          data.files_total ?? "?"
-        } sample documents — ${data.facts_added ?? 0} facts added.`,
-      );
-      setRefresh((n) => n + 1);
+      const data = (await fetch("/sandbox/sample-bundle-recs.json").then((r) => r.json())) as SampleFixture;
+      setRecs(data.recommendations ?? []);
+      setSummary(data.summary);
+      setInfoOnly(data.info_only ?? []);
+      setState("sample");
+      setMessage(null);
     } catch (err) {
       setMessage(`Could not load sample: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -135,243 +97,74 @@ export default function SandboxPage() {
     }
   };
 
-  const isEmpty = (counts?.sources ?? 0) <= 1; // marker counts as 1
+  /**
+   * Real upload path. After the engine ingests, pull recommendations
+   * but only keep ones whose created_at is after this sandbox session
+   * started — anything older belongs to the seeded corpus and isn't
+   * what the user just uploaded.
+   */
+  const onIngested = async () => {
+    try {
+      const data = (await fetch("/api/recommendations").then((r) => r.json())) as { recommendations?: SandboxRec[] };
+      const all = data.recommendations ?? [];
+      const fresh = all.filter((r) => (r.created_at ?? "") > sandboxStartedAt.current);
+      setRecs(fresh);
+      setSummary({
+        files_total: fresh.length > 0 ? fresh.length : 0,
+        files_processed: fresh.length,
+        facts_added: fresh.reduce((n, r) => n + (r.facts?.length ?? 0), 0),
+        entities_touched: new Set(fresh.map((r) => r.entity_id)).size,
+        open_recs: fresh.length,
+      });
+      setInfoOnly([]);
+      setState("uploaded");
+      setTimeout(() => {
+        document
+          .getElementById("sandbox-dashboard")
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 200);
+    } catch (err) {
+      setMessage(`Could not refresh after upload: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const resetSandbox = () => {
+    if (state !== "empty" && !confirm("Reset the sandbox? Loaded data will disappear from this view.")) {
+      return;
+    }
+    setState("empty");
+    setRecs([]);
+    setSummary(null);
+    setInfoOnly([]);
+    setMessage(null);
+    sandboxStartedAt.current = new Date().toISOString();
+  };
 
   return (
     <>
       <Nav onOpenSearch={() => setPaletteOpen(true)} />
 
-      <main style={{ maxWidth: 980, margin: "0 auto", padding: "48px 48px 96px" }}>
-        {/* Hero */}
-        <section style={{ marginBottom: 32 }}>
-          <p
-            className="mono"
-            style={{
-              fontSize: 11,
-              color: "var(--fg-dim)",
-              textTransform: "uppercase",
-              letterSpacing: "0.08em",
-              margin: "0 0 12px",
-            }}
-          >
-            / sandbox
-          </p>
-          <h1
-            style={{
-              fontSize: 44,
-              fontWeight: 500,
-              letterSpacing: "-0.025em",
-              lineHeight: 1.05,
-              margin: 0,
-            }}
-          >
-            Upload your data{" "}
-            <span className="serif-italic" style={{ fontWeight: 400 }}>
-              to start.
-            </span>
-          </h1>
-          <p
-            style={{
-              margin: "16px 0 0",
-              fontSize: 15,
-              color: "var(--fg-muted)",
-              maxWidth: 720,
-              lineHeight: 1.55,
-            }}
-          >
-            Drop a zip of emails / PDFs / scanned letters, or load the
-            7-document starter bundle. The pipeline builds Context.md per
-            entity and the dashboard below surfaces what needs attention —
-            in seconds. Press ⌘K to ask the agent about anything you've
-            uploaded.
-          </p>
-        </section>
-
-        {/* Engine state */}
-        <section
-          style={{
-            marginBottom: 28,
-            padding: 18,
-            borderRadius: 12,
-            border: "1px solid var(--border)",
-            background: "var(--bg-elevated)",
-            display: "grid",
-            gridTemplateColumns: "1fr auto",
-            gap: 18,
-            alignItems: "center",
-          }}
-        >
-          <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>
-            <Stat label="Facts" value={counts?.facts ?? "—"} />
-            <Stat label="Sources" value={counts?.sources ?? "—"} />
-            <Stat label="Entities" value={counts?.entities ?? "—"} />
-            <Stat label="Open recs" value={counts?.open ?? "—"} accent={!!counts && counts.open > 0} />
-            {!!counts && counts.critical > 0 && (
-              <Stat label="Critical" value={counts.critical} crit />
-            )}
-            <Stat
-              label="State"
-              value={isEmpty ? "empty" : "populated"}
-              tone={isEmpty ? "muted" : "brand"}
-            />
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button
-              onClick={loadSample}
-              disabled={busy !== "idle"}
-              style={{
-                padding: "9px 14px",
-                borderRadius: 8,
-                border: "1px solid var(--brand)",
-                background: busy === "loading-sample" ? "var(--brand-wash)" : "var(--brand)",
-                color: busy === "loading-sample" ? "var(--brand)" : "white",
-                fontSize: 13,
-                fontWeight: 500,
-                cursor: busy !== "idle" ? "default" : "pointer",
-                fontFamily: "inherit",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {busy === "loading-sample" ? "Ingesting…" : "Load sample bundle (7 docs)"}
-            </button>
-            <button
-              onClick={() => setAddOpen(true)}
-              disabled={busy !== "idle"}
-              title="Manually add a tenant, owner, contractor, unit, or building"
-              style={{
-                padding: "9px 14px",
-                borderRadius: 8,
-                border: "1px solid var(--border)",
-                background: "var(--bg)",
-                color: "var(--fg)",
-                fontSize: 13,
-                fontWeight: 500,
-                cursor: busy !== "idle" ? "default" : "pointer",
-                fontFamily: "inherit",
-                whiteSpace: "nowrap",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-              }}
-            >
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-                <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-              </svg>
-              Add entity
-            </button>
-            <button
-              onClick={wipe}
-              disabled={busy !== "idle"}
-              style={{
-                padding: "9px 14px",
-                borderRadius: 8,
-                border: "1px solid var(--rep-avoid)",
-                background: "transparent",
-                color: "var(--rep-avoid)",
-                fontSize: 13,
-                fontWeight: 500,
-                cursor: busy !== "idle" ? "default" : "pointer",
-                fontFamily: "inherit",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {busy === "wiping" ? "Wiping…" : "Reset sandbox"}
-            </button>
-          </div>
-        </section>
-
-        {message && (
-          <div
-            className="mono"
-            style={{
-              marginBottom: 24,
-              padding: "12px 16px",
-              borderRadius: 8,
-              background: "var(--brand-wash)",
-              border: "1px solid var(--brand-line)",
-              fontSize: 12,
-              color: "var(--fg)",
-            }}
-          >
-            ✓ {message}
-          </div>
-        )}
-
-        {/* Bundle download */}
-        <section
-          style={{
-            marginBottom: 32,
-            padding: 16,
-            borderRadius: 10,
-            background: "var(--bg)",
-            border: "1px dashed var(--border)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 16,
-          }}
-        >
-          <div>
-            <div style={{ fontSize: 13, color: "var(--fg)", fontWeight: 500 }}>
-              Want to take the bundle home?
-            </div>
-            <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", marginTop: 4 }}>
-              7 real Hausverwaltung PDFs from the seed corpus. Re-upload them anywhere
-              that accepts a zip → the same facts get extracted.
-            </div>
-          </div>
-          <a
-            href="/sandbox/sample-bundle.zip"
-            download
-            className="mono"
-            style={{
-              padding: "8px 14px",
-              borderRadius: 6,
-              border: "1px solid var(--border)",
-              background: "var(--bg)",
-              color: "var(--brand)",
-              fontSize: 12,
-              textDecoration: "none",
-              whiteSpace: "nowrap",
-            }}
-          >
-            sample-bundle.zip ↓
-          </a>
-        </section>
-
-        {/* The actual upload widget */}
-        <section style={{ marginBottom: 36 }}>
-          <h2
-            className="mono"
-            style={{
-              fontSize: 11,
-              color: "var(--fg-dim)",
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
-              margin: "0 0 14px",
-              fontWeight: 600,
-            }}
-          >
-            Upload your own
-          </h2>
-          <UploadInspector
-            onIngested={() => {
-              // New facts landed — pull fresh stats + recs and scroll the
-              // user to the sandbox dashboard so they see what was extracted.
-              setRefresh((n) => n + 1);
-              setTimeout(() => {
-                document
-                  .getElementById("sandbox-dashboard")
-                  ?.scrollIntoView({ behavior: "smooth", block: "start" });
-              }, 250);
-            }}
+      <main style={{ maxWidth: 1180, margin: "0 auto", padding: "48px 48px 96px" }}>
+        {state === "empty" ? (
+          <EmptyState
+            onLoadSample={loadSample}
+            onIngested={onIngested}
+            onAddEntity={() => setAddOpen(true)}
+            busy={busy}
+            message={message}
           />
-        </section>
-
-        {/* Recommendations from whatever has been uploaded — same engine,
-            same shape as /dashboard, scoped to the sandbox state. */}
-        <SandboxRecsPreview recs={recs} />
-
+        ) : (
+          <LoadedDashboard
+            recs={recs}
+            summary={summary}
+            infoOnly={infoOnly ?? []}
+            mode={state}
+            onReset={resetSandbox}
+            onAskAgent={() => setPaletteOpen(true)}
+            onAddEntity={() => setAddOpen(true)}
+            onIngested={onIngested}
+          />
+        )}
       </main>
 
       <CmdK
@@ -388,30 +181,508 @@ export default function SandboxPage() {
         onClose={() => setAddOpen(false)}
         onCreated={() => {
           setAddOpen(false);
-          setRefresh((n) => n + 1);
+          // After creating an entity manually, treat it as upload-mode
+          // so the user sees the new entity in the dashboard view.
+          void onIngested();
         }}
       />
     </>
   );
 }
 
-// ── Sandbox dashboard preview ─────────────────────────────────────────────
+// ── Empty state ─────────────────────────────────────────────────────────
 
-function SandboxRecsPreview({ recs }: { recs: SandboxRec[] | null }) {
-  if (recs === null) {
-    return null;
-  }
-  if (recs.length === 0) {
-    return (
+function EmptyState({
+  onLoadSample,
+  onIngested,
+  onAddEntity,
+  busy,
+  message,
+}: {
+  onLoadSample: () => void;
+  onIngested: () => void;
+  onAddEntity: () => void;
+  busy: string;
+  message: string | null;
+}) {
+  return (
+    <>
+      <section style={{ marginBottom: 32 }}>
+        <p
+          className="mono"
+          style={{
+            fontSize: 11,
+            color: "var(--fg-dim)",
+            textTransform: "uppercase",
+            letterSpacing: "0.08em",
+            margin: "0 0 12px",
+          }}
+        >
+          / sandbox
+        </p>
+        <h1
+          style={{
+            fontSize: 44,
+            fontWeight: 500,
+            letterSpacing: "-0.025em",
+            lineHeight: 1.05,
+            margin: 0,
+          }}
+        >
+          Upload your data{" "}
+          <span className="serif-italic" style={{ fontWeight: 400 }}>
+            to start.
+          </span>
+        </h1>
+        <p
+          style={{
+            margin: "16px 0 0",
+            fontSize: 15,
+            color: "var(--fg-muted)",
+            maxWidth: 720,
+            lineHeight: 1.55,
+          }}
+        >
+          The sandbox is empty. Drop a zip of emails / PDFs / scanned letters,
+          or load the 7-document starter bundle. The pipeline builds Context.md
+          per entity and surfaces what needs attention — instantly. The seeded
+          corpus on the main /dashboard isn&apos;t shown here.
+        </p>
+      </section>
+
+      <section
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 16,
+          marginBottom: 28,
+        }}
+      >
+        <button
+          onClick={onLoadSample}
+          disabled={busy === "loading-sample"}
+          style={{
+            padding: "20px 22px",
+            borderRadius: 12,
+            border: "1px solid var(--brand)",
+            background: busy === "loading-sample" ? "var(--brand-wash)" : "var(--brand)",
+            color: busy === "loading-sample" ? "var(--brand)" : "white",
+            fontSize: 14,
+            fontWeight: 500,
+            cursor: busy === "loading-sample" ? "default" : "pointer",
+            fontFamily: "inherit",
+            textAlign: "left",
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+          }}
+        >
+          <span style={{ fontSize: 16, fontWeight: 600 }}>
+            {busy === "loading-sample" ? "Loading sample…" : "Load sample bundle"}
+          </span>
+          <span style={{ fontSize: 12, opacity: 0.85 }}>
+            7 real Hausverwaltung PDFs (Mahnung, Kündigung, Hausgeld, Mieterhöhung, ETV, BKA, Vendor invoice). Precomputed — paints instantly.
+          </span>
+        </button>
+        <a
+          href="/sandbox/sample-bundle.zip"
+          download
+          className="mono"
+          style={{
+            padding: "20px 22px",
+            borderRadius: 12,
+            border: "1px dashed var(--border)",
+            background: "var(--bg)",
+            color: "var(--fg-muted)",
+            fontSize: 12,
+            fontWeight: 500,
+            textDecoration: "none",
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+            justifyContent: "center",
+          }}
+        >
+          <span style={{ fontSize: 13, color: "var(--fg)", fontWeight: 600 }}>
+            sample-bundle.zip ↓
+          </span>
+          <span style={{ fontSize: 11, color: "var(--fg-dim)" }}>
+            Download the 7 PDFs to upload anywhere else.
+          </span>
+        </a>
+      </section>
+
+      <section style={{ marginBottom: 32 }}>
+        <h2
+          className="mono"
+          style={{
+            fontSize: 11,
+            color: "var(--fg-dim)",
+            textTransform: "uppercase",
+            letterSpacing: "0.06em",
+            margin: "0 0 14px",
+            fontWeight: 600,
+          }}
+        >
+          Or upload your own
+        </h2>
+        <UploadInspector onIngested={onIngested} />
+      </section>
+
+      <section
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          flexWrap: "wrap",
+          paddingTop: 18,
+          borderTop: "1px solid var(--border-muted)",
+          fontSize: 12,
+          color: "var(--fg-dim)",
+        }}
+      >
+        <span>Need to add a single entity manually?</span>
+        <button
+          onClick={onAddEntity}
+          style={{
+            padding: "6px 12px",
+            borderRadius: 6,
+            border: "1px solid var(--border)",
+            background: "var(--bg)",
+            color: "var(--fg)",
+            fontSize: 12,
+            cursor: "pointer",
+            fontFamily: "inherit",
+          }}
+        >
+          + Add entity
+        </button>
+      </section>
+
+      {message && (
+        <div
+          className="mono"
+          style={{
+            marginTop: 18,
+            padding: "10px 14px",
+            borderRadius: 8,
+            background: "rgba(220,80,60,0.08)",
+            border: "1px solid var(--severity-critical)",
+            fontSize: 12,
+            color: "var(--severity-critical)",
+          }}
+        >
+          {message}
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── Loaded sandbox dashboard ────────────────────────────────────────────
+
+function LoadedDashboard({
+  recs,
+  summary,
+  infoOnly,
+  mode,
+  onReset,
+  onAskAgent,
+  onAddEntity,
+  onIngested,
+}: {
+  recs: SandboxRec[];
+  summary: SandboxSummary | null;
+  infoOnly: NonNullable<SampleFixture["info_only"]>;
+  mode: "sample" | "uploaded";
+  onReset: () => void;
+  onAskAgent: () => void;
+  onAddEntity: () => void;
+  onIngested: () => void;
+}) {
+  const sevColor = (s: SandboxRec["severity"]) =>
+    s === "critical"
+      ? "var(--severity-critical)"
+      : s === "high"
+        ? "var(--severity-high)"
+        : s === "medium"
+          ? "var(--severity-medium)"
+          : "var(--severity-low)";
+  const sorted = useMemo(() => {
+    const order: Record<SandboxRec["severity"], number> = {
+      critical: 0,
+      high: 1,
+      medium: 2,
+      low: 3,
+    };
+    return [...recs].sort((a, b) => order[a.severity] - order[b.severity]);
+  }, [recs]);
+  return (
+    <>
+      <header style={{ marginBottom: 24 }}>
+        <p
+          className="mono"
+          style={{
+            fontSize: 11,
+            color: "var(--fg-dim)",
+            textTransform: "uppercase",
+            letterSpacing: "0.08em",
+            margin: "0 0 12px",
+          }}
+        >
+          / sandbox · {mode === "sample" ? "sample bundle loaded" : "uploaded data"}
+        </p>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "baseline",
+            gap: 16,
+            flexWrap: "wrap",
+          }}
+        >
+          <h1
+            style={{
+              fontSize: 36,
+              fontWeight: 500,
+              letterSpacing: "-0.025em",
+              lineHeight: 1.05,
+              margin: 0,
+            }}
+          >
+            Sandbox dashboard
+          </h1>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              onClick={onAskAgent}
+              style={{
+                padding: "8px 14px",
+                borderRadius: 8,
+                border: "1px solid var(--border)",
+                background: "var(--bg)",
+                color: "var(--fg)",
+                fontSize: 12,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              Ask the agent
+              <span
+                className="mono"
+                style={{
+                  fontSize: 10,
+                  padding: "1px 6px",
+                  borderRadius: 4,
+                  background: "var(--bg-hover)",
+                  color: "var(--fg-muted)",
+                }}
+              >
+                ⌘K
+              </span>
+            </button>
+            <button
+              onClick={onAddEntity}
+              style={{
+                padding: "8px 14px",
+                borderRadius: 8,
+                border: "1px solid var(--border)",
+                background: "var(--bg)",
+                color: "var(--fg)",
+                fontSize: 12,
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              + Add entity
+            </button>
+            <button
+              onClick={onReset}
+              style={{
+                padding: "8px 14px",
+                borderRadius: 8,
+                border: "1px solid var(--severity-critical)",
+                background: "transparent",
+                color: "var(--severity-critical)",
+                fontSize: 12,
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              Reset sandbox
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {summary && (
+        <section
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+            gap: 0,
+            marginBottom: 28,
+            border: "1px solid var(--border)",
+            borderRadius: 10,
+            overflow: "hidden",
+          }}
+        >
+          <SummaryStat label="Documents" value={summary.files_processed} />
+          <SummaryStat label="Facts added" value={summary.facts_added} />
+          <SummaryStat label="Entities touched" value={summary.entities_touched} />
+          <SummaryStat label="Open cases" value={summary.open_recs} crit={summary.open_recs > 0} />
+        </section>
+      )}
+
       <section
         id="sandbox-dashboard"
+        style={{ marginBottom: 36, scrollMarginTop: 80 }}
+      >
+        {sorted.length === 0 ? (
+          <p style={{ fontSize: 13, color: "var(--fg-dim)", padding: "20px 0" }}>
+            No open cases yet. Drop more documents below to populate.
+          </p>
+        ) : (
+          <div
+            style={{
+              borderTop: "1px solid var(--border)",
+              borderBottom: "1px solid var(--border)",
+            }}
+          >
+            {sorted.map((rec) => (
+              <div
+                key={rec.id}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "4px minmax(220px, 1.2fr) minmax(220px, 1fr) auto",
+                  gap: 16,
+                  padding: "14px 0",
+                  borderBottom: "1px solid var(--border-muted)",
+                  alignItems: "start",
+                }}
+              >
+                <div
+                  style={{
+                    width: 4,
+                    height: 38,
+                    borderRadius: 2,
+                    background: sevColor(rec.severity),
+                  }}
+                />
+                <div>
+                  <div
+                    style={{
+                      fontSize: 14,
+                      fontWeight: 500,
+                      letterSpacing: "-0.005em",
+                      color: "var(--fg)",
+                    }}
+                  >
+                    {rec.title}
+                  </div>
+                  <div
+                    className="mono"
+                    style={{ fontSize: 11, color: "var(--fg-dim)", marginTop: 4 }}
+                  >
+                    {rec.entity_name}
+                  </div>
+                </div>
+                <div style={{ fontSize: 12.5, color: "var(--fg-muted)", lineHeight: 1.5 }}>
+                  {rec.summary}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" }}>
+                  <Link
+                    href={`/context/${encodeURIComponent(rec.entity_id)}`}
+                    className="mono"
+                    style={{
+                      fontSize: 11,
+                      color: "var(--brand)",
+                      textDecoration: "none",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    open context →
+                  </Link>
+                  {rec.actions && rec.actions.length > 0 && (
+                    <span
+                      className="mono"
+                      style={{ fontSize: 10, color: "var(--fg-dim)", whiteSpace: "nowrap" }}
+                    >
+                      {rec.actions.length} action{rec.actions.length === 1 ? "" : "s"} ready
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {infoOnly.length > 0 && (
+        <section style={{ marginBottom: 32 }}>
+          <h2
+            className="mono"
+            style={{
+              fontSize: 11,
+              color: "var(--fg-dim)",
+              textTransform: "uppercase",
+              letterSpacing: "0.06em",
+              margin: "0 0 12px",
+              fontWeight: 600,
+            }}
+          >
+            Also ingested · no manager action needed
+          </h2>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+              gap: 8,
+            }}
+          >
+            {infoOnly.map((d) => (
+              <div
+                key={d.title}
+                style={{
+                  padding: "12px 14px",
+                  borderRadius: 8,
+                  border: "1px solid var(--border-muted)",
+                  background: "var(--bg)",
+                }}
+              >
+                <div
+                  className="mono"
+                  style={{
+                    fontSize: 10,
+                    color: "var(--fg-dim)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                    marginBottom: 4,
+                  }}
+                >
+                  {d.kind}
+                </div>
+                <div
+                  style={{ fontSize: 13, fontWeight: 500, marginBottom: 4, color: "var(--fg)" }}
+                >
+                  {d.title}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--fg-muted)", lineHeight: 1.45 }}>
+                  {d.summary}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section
         style={{
-          marginTop: 36,
-          marginBottom: 36,
-          padding: "20px 22px",
-          borderRadius: 10,
-          border: "1px dashed var(--border)",
-          background: "var(--bg)",
+          marginTop: 24,
+          paddingTop: 18,
+          borderTop: "1px solid var(--border-muted)",
         }}
       >
         <h2
@@ -421,141 +692,34 @@ function SandboxRecsPreview({ recs }: { recs: SandboxRec[] | null }) {
             color: "var(--fg-dim)",
             textTransform: "uppercase",
             letterSpacing: "0.06em",
-            margin: "0 0 8px",
+            margin: "0 0 12px",
             fontWeight: 600,
           }}
         >
-          Sandbox dashboard
+          Add more
         </h2>
-        <p style={{ margin: 0, fontSize: 13, color: "var(--fg-muted)" }}>
-          No recommendations yet. Drop a document above (or hit{" "}
-          <strong>Load sample bundle</strong>) and the rec engine will
-          surface what needs attention here within seconds.
-        </p>
+        <UploadInspector onIngested={onIngested} />
       </section>
-    );
-  }
-  const top = recs.slice(0, 8);
-  const sevColor = (s: SandboxRec["severity"]) =>
-    s === "critical"
-      ? "var(--severity-critical)"
-      : s === "high"
-        ? "var(--severity-high)"
-        : s === "medium"
-          ? "var(--severity-medium)"
-          : "var(--severity-low)";
-  return (
-    <section id="sandbox-dashboard" style={{ marginTop: 36, marginBottom: 36, scrollMarginTop: 80 }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          justifyContent: "space-between",
-          marginBottom: 14,
-          gap: 16,
-          flexWrap: "wrap",
-        }}
-      >
-        <div>
-          <h2
-            className="mono"
-            style={{
-              fontSize: 11,
-              color: "var(--fg-dim)",
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
-              margin: "0 0 6px",
-              fontWeight: 600,
-            }}
-          >
-            Sandbox dashboard · {recs.length} open
-          </h2>
-          <div style={{ fontSize: 13, color: "var(--fg-muted)" }}>
-            What the rec engine pulled out of your sandbox state — every row
-            is real-time off the fact store.
-          </div>
-        </div>
-      </div>
-      <div
-        style={{
-          borderTop: "1px solid var(--border)",
-          borderBottom: "1px solid var(--border)",
-        }}
-      >
-        {top.map((rec) => (
-          <div
-            key={rec.id}
-            style={{
-              display: "grid",
-              gridTemplateColumns: "4px minmax(220px, 1.2fr) minmax(180px, 1fr) auto",
-              gap: 16,
-              padding: "12px 0",
-              borderBottom: "1px solid var(--border-muted)",
-              alignItems: "start",
-            }}
-          >
-            <div
-              style={{
-                width: 4,
-                height: 32,
-                borderRadius: 2,
-                background: sevColor(rec.severity),
-              }}
-            />
-            <div>
-              <div style={{ fontSize: 13.5, fontWeight: 500, letterSpacing: "-0.005em" }}>
-                {rec.title}
-              </div>
-              <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", marginTop: 2 }}>
-                {rec.entity_name}
-              </div>
-            </div>
-            <div style={{ fontSize: 12, color: "var(--fg-muted)", lineHeight: 1.45 }}>
-              {rec.summary.length > 140 ? rec.summary.slice(0, 140) + "…" : rec.summary}
-            </div>
-            <Link
-              href={`/context/${encodeURIComponent(rec.entity_id)}`}
-              className="mono"
-              style={{
-                fontSize: 11,
-                color: "var(--brand)",
-                textDecoration: "none",
-                whiteSpace: "nowrap",
-                paddingTop: 2,
-              }}
-            >
-              context →
-            </Link>
-          </div>
-        ))}
-      </div>
-      {recs.length > top.length && (
-        <p
-          className="mono"
-          style={{ marginTop: 8, fontSize: 11, color: "var(--fg-dim)" }}
-        >
-          showing top {top.length} of {recs.length} by severity · ⌘K to ask the agent for the rest
-        </p>
-      )}
-    </section>
+    </>
   );
 }
 
-function Stat({
+function SummaryStat({
   label,
   value,
-  accent,
   crit,
-  tone,
 }: {
   label: string;
-  value: number | string;
-  accent?: boolean;
+  value: number;
   crit?: boolean;
-  tone?: "muted" | "brand";
 }) {
   return (
-    <div>
+    <div
+      style={{
+        padding: "16px 20px",
+        borderRight: "1px solid var(--border-muted)",
+      }}
+    >
       <div
         className="mono"
         style={{
@@ -563,51 +727,22 @@ function Stat({
           color: "var(--fg-dim)",
           textTransform: "uppercase",
           letterSpacing: "0.06em",
+          marginBottom: 4,
         }}
       >
         {label}
       </div>
       <div
         style={{
-          fontSize: 22,
+          fontSize: 24,
           fontWeight: 500,
-          letterSpacing: "-0.01em",
-          color: crit
-            ? "var(--severity-critical)"
-            : accent || tone === "brand"
-              ? "var(--brand)"
-              : tone === "muted"
-                ? "var(--fg-muted)"
-                : "var(--fg)",
-          marginTop: 2,
+          letterSpacing: "-0.02em",
+          color: crit ? "var(--severity-critical)" : "var(--fg)",
           fontFeatureSettings: '"tnum"',
         }}
       >
         {value}
       </div>
     </div>
-  );
-}
-
-function QuickLink({ href, title, sub }: { href: string; title: string; sub: string }) {
-  return (
-    <Link
-      href={href}
-      style={{
-        flex: "1 1 220px",
-        padding: "12px 14px",
-        borderRadius: 8,
-        border: "1px solid var(--border)",
-        background: "var(--bg-elevated)",
-        textDecoration: "none",
-        color: "var(--fg)",
-        display: "block",
-      }}
-    >
-      <div style={{ fontSize: 13, fontWeight: 500, color: "var(--fg)" }}>{title} →</div>
-      <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", marginTop: 4 }}>
-        {sub}
-      </div>
-    </Link>
   );
 }

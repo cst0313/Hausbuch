@@ -44,6 +44,12 @@ export type AgentSuggestion = {
   label: string;
   detail?: string;
   draft_context?: unknown;
+  /** ID of the recommendation this suggestion belongs to. The CmdK
+   *  client uses it to deep-link into the dashboard's StreamPanel
+   *  (/dashboard?focus=<rec_id>) instead of re-asking the agent. */
+  rec_id?: string;
+  /** Fallback navigation target when no rec is in play. */
+  entity_id?: string;
 };
 
 export type AgentResponse = {
@@ -428,6 +434,8 @@ function generateSuggestions(
         label: action.label_de,
         detail: `${rec.title} — ${rec.entity_name}`,
         draft_context: action.draft_context,
+        rec_id: rec.id,
+        entity_id: rec.entity_id,
       });
     } else if (action.type === "draft_email" && action.draft_context) {
       suggestions.push({
@@ -435,18 +443,24 @@ function generateSuggestions(
         label: action.label_de,
         detail: rec.title,
         draft_context: action.draft_context,
+        rec_id: rec.id,
+        entity_id: rec.entity_id,
       });
     } else if (action.type === "escalate") {
       suggestions.push({
         type: "escalate",
         label: action.label_de,
         detail: rec.summary.slice(0, 100),
+        rec_id: rec.id,
+        entity_id: rec.entity_id,
       });
     } else if (action.type === "follow_up") {
       suggestions.push({
         type: "follow_up",
         label: action.label_de,
         detail: rec.title,
+        rec_id: rec.id,
+        entity_id: rec.entity_id,
       });
     }
   }

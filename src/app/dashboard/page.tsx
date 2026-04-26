@@ -158,6 +158,28 @@ export default function DashboardPage() {
     }
   }, []);
 
+  // Auto-open the StreamPanel when arriving via /dashboard?focus=<rec_id>.
+  // The CmdK palette's "Suggested next actions" chips deep-link here so
+  // clicking a recommendation in the agent's answer opens the case
+  // popup, not a new query. Waits for `recs` to populate so we can
+  // resolve the rec by id; if the deep-link target isn't in the
+  // current cap of 15 visible recs, we still open it.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (recs.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const focus = params.get("focus");
+    if (!focus) return;
+    const target = recs.find((r) => r.id === focus);
+    if (target) {
+      openStream(target);
+      // Strip the param so a refresh doesn't re-open and the URL stays clean.
+      const next = new URL(window.location.href);
+      next.searchParams.delete("focus");
+      window.history.replaceState({}, "", next.toString());
+    }
+  }, [recs]);
+
   useEffect(() => {
     let cancelled = false;
 

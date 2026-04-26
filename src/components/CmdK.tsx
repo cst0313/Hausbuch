@@ -24,7 +24,13 @@ type AgentResponse = {
   answer: string;
   citations: string[];
   steps: AgentStep[];
-  suggestions: Array<{ type: string; label: string; detail?: string }>;
+  suggestions: Array<{
+    type: string;
+    label: string;
+    detail?: string;
+    rec_id?: string;
+    entity_id?: string;
+  }>;
   facts_used: number;
   model: string;
   latency_ms: number;
@@ -972,20 +978,40 @@ export function CmdK({
                       }}
                     >
                       The agent picked these from your open recommendations + the
-                      question you asked. Click one to ask the agent to walk
-                      through it next.
+                      question you asked. Click one to open the matching case
+                      in the dashboard — the action ladder, draft, and email
+                      thread are right there.
                     </p>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                       {agentResp.suggestions.slice(0, 5).map((s, i) => (
                         <button
                           key={i}
                           onClick={() => {
-                            const followUp = s.detail
-                              ? `${s.label} — ${s.detail}`
-                              : s.label;
-                            askAgent(followUp);
+                            // Suggestions ARE recommended actions, not new
+                            // queries. Each carries the rec it came from
+                            // (rec_id) or at least the entity. Open the
+                            // correct popup instead of re-asking the agent.
+                            onClose();
+                            if (s.rec_id) {
+                              window.location.href = `/dashboard?focus=${encodeURIComponent(s.rec_id)}`;
+                            } else if (s.entity_id) {
+                              window.location.href = `/context/${encodeURIComponent(s.entity_id)}`;
+                            } else {
+                              // Legacy investigation suggestions with no rec
+                              // attached: fall back to re-asking the agent.
+                              const followUp = s.detail
+                                ? `${s.label} — ${s.detail}`
+                                : s.label;
+                              askAgent(followUp);
+                            }
                           }}
-                          title={s.detail ?? s.label}
+                          title={
+                            s.rec_id
+                              ? `Open this case in the dashboard`
+                              : s.entity_id
+                                ? `Open ${s.entity_id} Context.md`
+                                : s.detail ?? s.label
+                          }
                           style={{
                             padding: "5px 10px",
                             borderRadius: 6,

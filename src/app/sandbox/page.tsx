@@ -377,6 +377,10 @@ export default function SandboxPage() {
             })
             .catch(() => showToast("Dispatch failed — check the network tab."));
         }}
+        onOpenProfile={(c: Contractor) => {
+          setPickerOpen(false);
+          window.location.href = `/context/${encodeURIComponent(c.id)}`;
+        }}
       />
 
       <AddEntityModal

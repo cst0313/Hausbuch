@@ -41,9 +41,25 @@ export function TimelineScrubber({ facts, at, onChange, onJumpToTick }: Props) {
         ticks: [] as Array<{ t: number; count: number; key: string }>,
       };
     }
-    const times = facts.map((f) => Date.parse(f.known_from)).filter(Number.isFinite);
-    const mn = Math.min(...times);
-    const mx = Math.max(Date.now(), ...times);
+    // Prefer valid_from (when in the world the fact was true) over
+    // known_from (when we wrote it). For seeded data the latter is all
+    // "today" — using it collapses every entity to a single-point
+    // timeline (slider stuck, divide-by-zero). valid_from spreads the
+    // facts across actual real-world time.
+    const times = facts
+      .map((f) => Date.parse(f.valid_from ?? f.known_from))
+      .filter(Number.isFinite);
+    let mn = Math.min(...times);
+    let mx = Math.max(Date.now(), ...times);
+    // Degenerate range — entity has facts on a single day (e.g. a unit
+    // with only stammdaten). Pad the range so the slider has somewhere
+    // to scrub: 90 days behind the only date, 7 days ahead. The user
+    // sees "no earlier history" instead of a frozen handle.
+    const MIN_RANGE_MS = 30 * DAY_MS;
+    if (mx - mn < MIN_RANGE_MS) {
+      mn = Math.min(mn, mn - 90 * DAY_MS);
+      mx = Math.max(mx, mx + 7 * DAY_MS);
+    }
     const bins = new Map<string, number>();
     for (const t of times) {
       const d = new Date(t);

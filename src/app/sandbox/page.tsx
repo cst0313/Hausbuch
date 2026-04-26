@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Nav } from "@/components/Nav";
 import { UploadInspector } from "@/components/UploadInspector";
 import { AddEntityModal } from "@/components/AddEntityModal";
+import { CmdK } from "@/components/CmdK";
 
 type Counts = {
   facts: number;
@@ -32,6 +33,24 @@ export default function SandboxPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [recs, setRecs] = useState<SandboxRec[] | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // ⌘K / Ctrl+K opens the agent palette. Mirrors the dashboard's binding
+  // so the user gets the same affordance everywhere recs are visible.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen(true);
+      }
+      if (e.key === "/" && !["INPUT", "TEXTAREA"].includes((e.target as HTMLElement)?.tagName)) {
+        e.preventDefault();
+        setPaletteOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const [refresh, setRefresh] = useState(0);
 
   useEffect(() => {
@@ -120,7 +139,7 @@ export default function SandboxPage() {
 
   return (
     <>
-      <Nav />
+      <Nav onOpenSearch={() => setPaletteOpen(true)} />
 
       <main style={{ maxWidth: 980, margin: "0 auto", padding: "48px 48px 96px" }}>
         {/* Hero */}
@@ -146,9 +165,9 @@ export default function SandboxPage() {
               margin: 0,
             }}
           >
-            Empty engine,{" "}
+            Upload your data{" "}
             <span className="serif-italic" style={{ fontWeight: 400 }}>
-              your documents.
+              to start.
             </span>
           </h1>
           <p
@@ -160,11 +179,11 @@ export default function SandboxPage() {
               lineHeight: 1.55,
             }}
           >
-            Reset the database to zero, then upload your own emails / PDFs / scanned letters
-            and watch the same pipeline build a fresh Context.md per entity. Or load our
-            7-document starter bundle if you want a curated tour. Everything you do here
-            persists until the next reset — links from the dashboard, /context pages, and
-            the agent will all reflect what you uploaded.
+            Drop a zip of emails / PDFs / scanned letters, or load the
+            7-document starter bundle. The pipeline builds Context.md per
+            entity and the dashboard below surfaces what needs attention —
+            in seconds. Press ⌘K to ask the agent about anything you've
+            uploaded.
           </p>
         </section>
 
@@ -353,33 +372,16 @@ export default function SandboxPage() {
             same shape as /dashboard, scoped to the sandbox state. */}
         <SandboxRecsPreview recs={recs} />
 
-        {/* Quick links */}
-        <section
-          style={{
-            display: "flex",
-            gap: 14,
-            flexWrap: "wrap",
-            paddingTop: 18,
-            borderTop: "1px solid var(--border)",
-          }}
-        >
-          <QuickLink
-            href="/dashboard"
-            title="Dashboard"
-            sub="The full triage view of the seeded corpus"
-          />
-          <QuickLink
-            href="/context/weg%3Aimmanuelkirchstr-26"
-            title="WEG Context.md"
-            sub="The aggregated document for the seeded property"
-          />
-          <QuickLink
-            href="/research"
-            title="Performance numbers"
-            sub="How we got Context.md down 90% in tokens"
-          />
-        </section>
       </main>
+
+      <CmdK
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onOpenEntity={(id) => {
+          setPaletteOpen(false);
+          window.location.href = `/context/${encodeURIComponent(id)}`;
+        }}
+      />
 
       <AddEntityModal
         open={addOpen}
@@ -427,9 +429,8 @@ function SandboxRecsPreview({ recs }: { recs: SandboxRec[] | null }) {
         </h2>
         <p style={{ margin: 0, fontSize: 13, color: "var(--fg-muted)" }}>
           No recommendations yet. Drop a document above (or hit{" "}
-          <strong>Load sample bundle</strong>) and the same engine that powers{" "}
-          <Link href="/dashboard" style={{ color: "var(--brand)" }}>/dashboard</Link>{" "}
-          will surface what needs attention here within seconds.
+          <strong>Load sample bundle</strong>) and the rec engine will
+          surface what needs attention here within seconds.
         </p>
       </section>
     );
@@ -470,22 +471,10 @@ function SandboxRecsPreview({ recs }: { recs: SandboxRec[] | null }) {
             Sandbox dashboard · {recs.length} open
           </h2>
           <div style={{ fontSize: 13, color: "var(--fg-muted)" }}>
-            What the rec engine pulled out of your sandbox state. Same logic as
-            the live <Link href="/dashboard" style={{ color: "var(--brand)" }}>dashboard</Link>{" "}
-            — every row is real-time off the fact store.
+            What the rec engine pulled out of your sandbox state — every row
+            is real-time off the fact store.
           </div>
         </div>
-        <Link
-          href="/dashboard"
-          className="mono"
-          style={{
-            fontSize: 11,
-            color: "var(--brand)",
-            textDecoration: "none",
-          }}
-        >
-          full dashboard →
-        </Link>
       </div>
       <div
         style={{
@@ -545,8 +534,7 @@ function SandboxRecsPreview({ recs }: { recs: SandboxRec[] | null }) {
           className="mono"
           style={{ marginTop: 8, fontSize: 11, color: "var(--fg-dim)" }}
         >
-          showing {top.length} of {recs.length} · open the full{" "}
-          <Link href="/dashboard" style={{ color: "var(--brand)" }}>dashboard</Link> to triage all
+          showing top {top.length} of {recs.length} by severity · ⌘K to ask the agent for the rest
         </p>
       )}
     </section>

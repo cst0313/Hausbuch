@@ -15,6 +15,11 @@
 import { db, getEntity, listEntities, getAllFactsForEntity, getSource } from "./db";
 import type { Entity, Fact, Source } from "./types";
 import { getReputation, type Reputation } from "./reputation";
+import {
+  scoreIncidentTypes,
+  hasStrongIncidentSignal,
+  type IncidentType,
+} from "./incident-classify";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -85,6 +90,20 @@ export type Recommendation = {
     /** For tenants: list of unit ids they've been associated with (cross-unit history). */
     related_units?: string[];
   };
+  /**
+   * Operational issues that *caused* this rec, when this rec is downstream of
+   * a maintenance failure. Set on legal recs (a Mietminderung citing
+   * Wasserschaden + Schimmel; a Kündigung citing Heizungsausfall) so the UI
+   * can surface "fix the cause first" instead of jumping straight to legal
+   * review. Never special-cased — derived generically by scanning the legal
+   * fact's source body with the shared incident classifier.
+   */
+  root_causes?: Array<{
+    type: IncidentType;
+    score: number;
+    /** Open incidents of this type already on the entity, if any. */
+    open_incident_count: number;
+  }>;
   created_at: string;
 };
 
@@ -137,7 +156,7 @@ function computeRecommendations(): Recommendation[] {
 
     // Legal issue recommendations (Mietminderung, Kündigung)
     for (const fact of legal) {
-      const rec = buildLegalRecommendation(entity, fact, legal, emailChain, allEntities);
+      const rec = buildLegalRecommendation(entity, fact, legal, emailChain, allEntities, contractorMap);
       if (rec) recs.push(rec);
     }
   }
@@ -474,18 +493,117 @@ function chainForFact(fact: Fact): Recommendation["email_chain"] {
   }));
 }
 
+/**
+ * Generic root-cause detector. Reads the body of the source that produced
+ * `legalFact` and returns any incident types mentioned with strong signal
+ * (subject keyword OR ≥2 body hits) — these are the operational issues
+ * that almost certainly caused the legal escalation.
+ *
+ * Also counts how many open incidents of each detected type already exist
+ * on the entity, so the UI can show "Wasserschaden (3 offen seit 11/2025)".
+ *
+ * Works for ANY legal fact: Mietminderung, Kündigung, Anwaltsschreiben, or
+ * future legal predicates. No per-predicate special casing.
+ */
+function detectRootCauses(
+  legalFact: Fact,
+  entityId: string,
+): Recommendation["root_causes"] {
+  const src = getSource(legalFact.source);
+  if (!src) return undefined;
+  const body = src.raw_excerpt ?? "";
+  const subject = src.title ?? "";
+  const matches = scoreIncidentTypes(body, subject);
+  // Threshold inside a legal-fact body is intentionally LOWER than the seed
+  // extractor's. We already know the email is a real complaint (the legal
+  // extractor's intent regex passed); any explicit mention of an incident
+  // keyword in this context is the cause, not an off-hand reference. Without
+  // this relaxed threshold, "Wasserschaden, Schimmel" — one regex hit each —
+  // wouldn't surface as the root cause.
+  const strong = matches.filter((m) => m.score >= 1);
+  if (strong.length === 0) return undefined;
+  // Cap at 3 to avoid noisy recs ("water + mold + lock + heating + …" — if
+  // five things are listed, the email is venting, not localizing the cause).
+  const capped = strong.slice(0, 3);
+
+  // Count open incidents of each detected type on the entity for context.
+  const openByType = new Map<string, number>();
+  type Row = { value: string; n: number };
+  const rows = db()
+    .prepare(
+      `SELECT value, COUNT(*) AS n
+         FROM facts
+        WHERE entity = @e
+          AND predicate = 'incident.type'
+          AND known_to IS NULL
+        GROUP BY value`,
+    )
+    .all({ e: entityId }) as Row[];
+  for (const r of rows) openByType.set(r.value, r.n);
+
+  return capped.map((m) => ({
+    type: m.type,
+    score: m.score,
+    open_incident_count: openByType.get(m.type) ?? 0,
+  }));
+}
+
+/**
+ * Build dispatch_contractor actions for each detected root cause. Picks the
+ * best-rated contractor in the matching branche. Caller decides whether to
+ * prepend these actions ahead of legal review, replace, or merge — this
+ * function only prepares the candidates.
+ */
+function rootCauseDispatchActions(
+  causes: NonNullable<Recommendation["root_causes"]>,
+  contractors: Map<string, Entity>,
+): RecommendedAction[] {
+  const out: RecommendedAction[] = [];
+  for (const cause of causes) {
+    const match = findContractor(cause.type, contractors);
+    if (!match) continue;
+    const c = match.chosen;
+    out.push({
+      type: "dispatch_contractor",
+      label: `Dispatch ${c.name} for ${cause.type.replace(/_/g, " ")}`,
+      label_de: `${c.name} beauftragen — ${incidentTitle(cause.type)}`,
+      recipient: {
+        entity_id: c.id,
+        name: c.name,
+        email: findFactValue(c.id, "identity.email") ?? "",
+        role: "contractor",
+      },
+      draft_context: {
+        from: "Huber & Partner Immobilienverwaltung GmbH <info@huber-partner-verwaltung.de>",
+        to: c.name,
+        to_email: findFactValue(c.id, "identity.email") ?? "",
+        subject: `Reparaturauftrag: ${incidentTitle(cause.type)} — Mietminderung anhängig`,
+        incident_summary: `${incidentTitle(cause.type)} ist Ursache einer angekündigten Mietminderung. Sofortige Behebung erforderlich.`,
+        entity_context: `${cause.open_incident_count} offene Vorgänge dieses Typs auf der Einheit.`,
+        language: "de",
+        tone: "urgent",
+      },
+    });
+  }
+  return out;
+}
+
 function buildLegalRecommendation(
   entity: Entity,
   fact: Fact,
   allLegal: Fact[],
   emailChain: Recommendation["email_chain"],
   allEntities: Entity[],
+  contractors: Map<string, Entity>,
 ): Recommendation | null {
   if (fact.predicate === "legal.mietminderung" && String(fact.value) === "true") {
     const pctFact = allLegal.find(f => f.predicate === "legal.mietminderung.prozent");
     const pct = pctFact ? String(pctFact.value) : "?";
     const src = getSource(fact.source);
     const awaitingReply = isAwaitingReply(entity.id, fact.known_from);
+    const rootCauses = detectRootCauses(fact, entity.id);
+    const causeNames = rootCauses?.map((c) => incidentTitle(c.type)).join(" + ");
+    const causeNamesEn = rootCauses?.map((c) => c.type.replace(/_/g, " ")).join(" + ");
 
     return {
       id: `rec:${entity.id}:mietminderung`,
@@ -496,8 +614,13 @@ function buildLegalRecommendation(
       category: "legal.mietminderung",
       title: `Mietminderung ${pct}% angekündigt`,
       title_en: `Rent reduction ${pct}% announced`,
-      summary: `${entity.name} hat eine Mietminderung um ${pct}% angekündigt. Rechtliche Prüfung und Mangelbehebung erforderlich.`,
-      summary_en: `${entity.name} has announced a ${pct}% rent reduction. Legal review and remediation required.`,
+      summary: rootCauses && rootCauses.length > 0
+        ? `${entity.name} hat eine Mietminderung um ${pct}% angekündigt — Ursache: ${causeNames}. Erst Mängel beheben, dann rechtliche Prüfung.`
+        : `${entity.name} hat eine Mietminderung um ${pct}% angekündigt. Rechtliche Prüfung und Mangelbehebung erforderlich.`,
+      summary_en: rootCauses && rootCauses.length > 0
+        ? `${entity.name} has announced a ${pct}% rent reduction — root cause: ${causeNamesEn}. Fix the underlying issue before legal review.`
+        : `${entity.name} has announced a ${pct}% rent reduction. Legal review and remediation required.`,
+      root_causes: rootCauses,
       facts: (() => {
         const out: Recommendation["facts"] = [];
         if (pctFact) {
@@ -521,10 +644,16 @@ function buildLegalRecommendation(
         return out;
       })(),
       email_chain: chainForFact(fact),
-      actions: awaitingReply
-        ? [
-            // Already replied to the Mietminderung notice — escalation may
-            // still be needed (legal review), but no fresh draft.
+      // Action ordering rule: fix the cause, then handle the consequence.
+      // When the Mietminderung email cites Mängel, the contractor dispatch
+      // is the load-bearing action — legal review and the tenant reply come
+      // after. When no cause is detectable in the body, fall back to the
+      // legacy ordering (escalate / dispatch / draft).
+      actions: (() => {
+        const dispatches = rootCauses ? rootCauseDispatchActions(rootCauses, contractors) : [];
+        if (awaitingReply) {
+          return [
+            ...dispatches, // still actionable even if we already replied
             {
               type: "escalate",
               label: "Legal review pending",
@@ -535,40 +664,50 @@ function buildLegalRecommendation(
               label: `Follow up with ${entity.name} if no reply`,
               label_de: `Nachfassen bei ${entity.name} wenn keine Antwort`,
             },
-          ]
-        : [
-            {
-              type: "escalate",
-              label: "Legal review needed",
-              label_de: "Rechtliche Prüfung erforderlich",
-            },
-            {
-              type: "dispatch_contractor",
-              label: "Dispatch repair",
-              label_de: "Reparatur beauftragen",
-            },
-            {
-              type: "draft_email",
-              label: `Respond to ${entity.name}`,
-              label_de: `Antwort an ${entity.name}`,
-              recipient: {
-                entity_id: entity.id,
-                name: entity.name,
-                email: findFactValue(entity.id, "identity.email") ?? "",
-                role: entity.type,
+          ] as RecommendedAction[];
+        }
+        const replyDraft: RecommendedAction = {
+          type: "draft_email",
+          label: `Respond to ${entity.name}`,
+          label_de: `Antwort an ${entity.name}`,
+          recipient: {
+            entity_id: entity.id,
+            name: entity.name,
+            email: findFactValue(entity.id, "identity.email") ?? "",
+            role: entity.type,
+          },
+          draft_context: {
+            from: "Huber & Partner Immobilienverwaltung GmbH <info@huber-partner-verwaltung.de>",
+            to: entity.name,
+            to_email: findFactValue(entity.id, "identity.email") ?? "",
+            subject: `Re: Mietminderung — ${entity.name}`,
+            incident_summary: causeNames
+              ? `Mietminderung ${pct}% angekündigt wegen ${causeNames}. Wir haben den Fachbetrieb beauftragt.`
+              : `Mietminderung ${pct}% angekündigt wegen Baumängeln.`,
+            entity_context: `Mieter: ${entity.name}. Ankündigung: ${pct}% Minderung.`,
+            language: "de",
+            tone: "formal",
+          },
+        };
+        const legalReview: RecommendedAction = {
+          type: "escalate",
+          label: "Legal review needed",
+          label_de: "Rechtliche Prüfung erforderlich",
+        };
+        // With root causes: dispatch FIRST, then reply, then legal review.
+        // Without: keep the original "legal review / dispatch / reply" order.
+        return dispatches.length > 0
+          ? [...dispatches, replyDraft, legalReview]
+          : [
+              legalReview,
+              {
+                type: "dispatch_contractor",
+                label: "Dispatch repair",
+                label_de: "Reparatur beauftragen",
               },
-              draft_context: {
-                from: "Huber & Partner Immobilienverwaltung GmbH <info@huber-partner-verwaltung.de>",
-                to: entity.name,
-                to_email: findFactValue(entity.id, "identity.email") ?? "",
-                subject: `Re: Mietminderung — ${entity.name}`,
-                incident_summary: `Mietminderung ${pct}% angekündigt wegen Baumängeln.`,
-                entity_context: `Mieter: ${entity.name}. Ankündigung: ${pct}% Minderung.`,
-                language: "de",
-                tone: "formal",
-              },
-            },
-          ],
+              replyDraft,
+            ];
+      })(),
       created_at: fact.known_from,
     };
   }
@@ -576,6 +715,40 @@ function buildLegalRecommendation(
   if (fact.predicate === "legal.kuendigung" && String(fact.value) === "true") {
     const src = getSource(fact.source);
     const awaitingReply = isAwaitingReply(entity.id, fact.known_from);
+    const rootCauses = detectRootCauses(fact, entity.id);
+    const causeNames = rootCauses?.map((c) => incidentTitle(c.type)).join(" + ");
+    const causeNamesEn = rootCauses?.map((c) => c.type.replace(/_/g, " ")).join(" + ");
+    const dispatches = rootCauses ? rootCauseDispatchActions(rootCauses, contractors) : [];
+
+    const handover: RecommendedAction = {
+      type: "follow_up",
+      label: "Schedule handover",
+      label_de: "Übergabetermin vereinbaren",
+    };
+    const confirmDraft: RecommendedAction = {
+      type: "draft_email",
+      label: `Confirm termination to ${entity.name}`,
+      label_de: `Kündigungsbestätigung an ${entity.name}`,
+      recipient: {
+        entity_id: entity.id,
+        name: entity.name,
+        email: findFactValue(entity.id, "identity.email") ?? "",
+        role: entity.type,
+      },
+      draft_context: {
+        from: "Huber & Partner Immobilienverwaltung GmbH <info@huber-partner-verwaltung.de>",
+        to: entity.name,
+        to_email: findFactValue(entity.id, "identity.email") ?? "",
+        subject: `Kündigungsbestätigung — ${entity.name}`,
+        incident_summary: causeNames
+          ? `Kündigung eingegangen — Ursache laut Mieter: ${causeNames}.`
+          : `Kündigung eingegangen.`,
+        entity_context: `Mieter: ${entity.name}. Kündigung bestätigen, Übergabe planen.`,
+        language: "de",
+        tone: "formal",
+      },
+    };
+
     return {
       id: `rec:${entity.id}:kuendigung`,
       severity: "high",
@@ -585,8 +758,13 @@ function buildLegalRecommendation(
       category: "legal.kuendigung",
       title: "Kündigung eingegangen",
       title_en: "Termination received",
-      summary: `${entity.name} hat den Mietvertrag gekündigt. Übergabetermin und Nachmietersuche einleiten.`,
-      summary_en: `${entity.name} has terminated the lease. Schedule handover and start tenant search.`,
+      summary: rootCauses && rootCauses.length > 0
+        ? `${entity.name} hat den Mietvertrag gekündigt — Ursache laut Mieter: ${causeNames}. Mängelbehebung kann eine Rücknahme erwirken.`
+        : `${entity.name} hat den Mietvertrag gekündigt. Übergabetermin und Nachmietersuche einleiten.`,
+      summary_en: rootCauses && rootCauses.length > 0
+        ? `${entity.name} has terminated the lease — cited cause: ${causeNamesEn}. Fixing the underlying issue may reverse the termination.`
+        : `${entity.name} has terminated the lease. Schedule handover and start tenant search.`,
+      root_causes: rootCauses,
       facts: [{
         predicate: fact.predicate,
         value: "true",
@@ -598,46 +776,17 @@ function buildLegalRecommendation(
       email_chain: chainForFact(fact),
       actions: awaitingReply
         ? [
-            // Confirmation already sent — only the operational follow-ups remain.
-            {
-              type: "follow_up",
-              label: "Schedule handover",
-              label_de: "Übergabetermin vereinbaren",
-            },
+            ...dispatches,
+            handover,
             {
               type: "follow_up",
               label: `Awaiting reply from ${entity.name}`,
               label_de: `Wartet auf Antwort von ${entity.name}`,
             },
           ]
-        : [
-            {
-              type: "follow_up",
-              label: "Schedule handover",
-              label_de: "Übergabetermin vereinbaren",
-            },
-            {
-              type: "draft_email",
-              label: `Confirm termination to ${entity.name}`,
-              label_de: `Kündigungsbestätigung an ${entity.name}`,
-              recipient: {
-                entity_id: entity.id,
-                name: entity.name,
-                email: findFactValue(entity.id, "identity.email") ?? "",
-                role: entity.type,
-              },
-              draft_context: {
-                from: "Huber & Partner Immobilienverwaltung GmbH <info@huber-partner-verwaltung.de>",
-                to: entity.name,
-                to_email: findFactValue(entity.id, "identity.email") ?? "",
-                subject: `Kündigungsbestätigung — ${entity.name}`,
-                incident_summary: `Kündigung eingegangen.`,
-                entity_context: `Mieter: ${entity.name}. Kündigung bestätigen, Übergabe planen.`,
-                language: "de",
-                tone: "formal",
-              },
-            },
-          ],
+        : dispatches.length > 0
+          ? [...dispatches, handover, confirmDraft]
+          : [handover, confirmDraft],
       created_at: fact.known_from,
     };
   }

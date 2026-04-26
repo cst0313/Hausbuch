@@ -24,6 +24,7 @@ import {
   newSourceId,
 } from "./db";
 import { classifyEmailIncident } from "./classify";
+import { scoreIncidentTypes, hasStrongIncidentSignal } from "./incident-classify";
 
 // Emails where keyword scoring couldn't pick an incident type but the
 // category metadata says it IS an incident. We collect them during the
@@ -522,75 +523,17 @@ function extractEmailFacts(entityId: string, source: Source, body: string, categ
   const cat = (category ?? "").toLowerCase();
 
   // ── Incident detection ─────────────────────────────────────────────
-  // Score each candidate type by counting keyword matches across body+title;
-  // pick the highest-scoring type. Ties break in priority order. This avoids
-  // the previous bug where an email mentioning "Wasser tropft am Aufzug"
-  // got classified as `elevator` because the linear-priority OR-chain didn't
-  // weigh the water signal more heavily.
+  // Single source of truth: scoreIncidentTypes() lives in incident-classify.ts
+  // and is shared with the rec engine, so root-cause detection at rec time
+  // can never silently disagree with the extractor's keyword set.
   const isSchaden = cat.includes("schaden") || cat.includes("mangel");
-  const PATTERNS: Array<[string, RegExp[]]> = [
-    [
-      "water_damage",
-      [
-        /\bwasser\b/i,
-        /\bwasserschaden\b/i,
-        /\bfeucht/i,
-        /\bn(?:a|ä)sse\b/i,
-        /\bnass\b/i,
-        /\bdurchn(?:a|ä)sst/i,
-        /\btropf/i, // tropft, tropfen, Tropfen
-        /\bleck/i,
-        /\bleckage/i,
-        /\bundicht/i,
-        /\brohrbruch/i,
-        /\bwasserrohr/i,
-        /\b(?:ü|ue)berschw(?:emm|emm)/i,
-        /\bdecke[^.]*?(?:tropf|nass|undicht|wasser)/i,
-        /\bwater\b/i,
-        /\bleak/i,
-        /\bflood/i,
-      ],
-    ],
-    ["mold", [/\bschimmel/i, /\bschimmelbefall/i, /\bmold\b/i, /\bmildew/i]],
-    [
-      "heating",
-      [/\bheizung/i, /\bthermostat/i, /\bkalt[^.]{0,30}wohn/i, /\bheating\b/i, /\bboiler/i],
-    ],
-    [
-      "lock_issue",
-      [
-        /\bschloss/i,
-        /\bschl(?:ü|ue)ssel/i,
-        /\btuer.*schliesst/i,
-        /\bhaustuer/i,
-        /\bschlie(?:ß|ss)anlage/i,
-        /\block\b/i,
-        /\bkey\b/i,
-      ],
-    ],
-    ["elevator", [/\baufzug/i, /\belevator/i, /\bfahrstuhl/i, /\blift\b/i]],
-    ["noise", [/\bruhest(?:ö|oe)rung/i, /\bl(?:ä|ae)rm\b/i, /\bnoise\b/i]],
-  ];
+  const subjectStr = (source.title ?? "");
+  const matches = scoreIncidentTypes(body, subjectStr);
+  const subjectMatchedType = matches.find((m) => m.subjectMatch);
+  const top = matches[0];
+  const hasStrongSignal = hasStrongIncidentSignal(matches, isSchaden);
 
-  const scored = PATTERNS.map(([type, regs]) => ({
-    type,
-    score: regs.reduce((n, r) => n + (r.test(text) ? 1 : 0), 0),
-  })).filter((x) => x.score > 0);
-
-  // Require either an explicit Schaden/Mangel category OR strong evidence
-  // (≥2 keyword hits, OR the keyword(s) live in the email subject — subject
-  // lines are intentional, body mentions can be off-hand). Prevents emails
-  // that briefly mention "tuer" or "wasser" in passing from being filed as
-  // a real incident.
-  const subject = (source.title ?? "").toLowerCase();
-  const subjectMatchedType = scored.find((s) => {
-    const regs = PATTERNS.find(([t]) => t === s.type)?.[1] ?? [];
-    return regs.some((r) => r.test(subject));
-  });
-  const top = scored.sort((a, b) => b.score - a.score)[0];
-  const hasStrongSignal = isSchaden || !!subjectMatchedType || (top && top.score >= 2);
-
-  if (hasStrongSignal && scored.length > 0) {
+  if (hasStrongSignal && matches.length > 0) {
     const type = subjectMatchedType?.type ?? top.type;
     writeFact(entityId, "incident.type", type, source.id, body.slice(0, 120), now);
     writeFact(entityId, "incident.status", "reported", source.id, "gemeldet", now);
@@ -611,13 +554,13 @@ function extractEmailFacts(entityId: string, source: Source, body: string, categ
   // thread or a signature should NOT mark the entity as having terminated
   // their lease. Require: explicit category, OR subject keyword, OR an
   // unambiguous first-person phrase in the body.
-  const subjectHasKuendigung = /k(?:ü|ue)ndigung/i.test(subject);
+  const subjectHasKuendigung = /k(?:ü|ue)ndigung/i.test(subjectStr);
   const bodyHasKuendigungIntent = /\b(?:hiermit\s+)?(?:k(?:ü|ue)ndige|k(?:ü|ue)ndigen?\s+(?:wir|hiermit))\b|fristgerecht.*k(?:ü|ue)ndig|mietvertrag.*k(?:ü|ue)ndig/i.test(body);
   if (cat.includes("kuendigung") || subjectHasKuendigung || bodyHasKuendigungIntent) {
     writeFact(entityId, "legal.kuendigung", "true", source.id, body.slice(0, 120), now);
   }
 
-  const subjectHasMietminderung = /mietminderung|minderung\s+der\s+miete/i.test(subject);
+  const subjectHasMietminderung = /mietminderung|minderung\s+der\s+miete/i.test(subjectStr);
   const bodyHasMietminderungIntent = /\bmietminderung\b|\bmiete\s+(?:um|von)\s+\d+\s*%\s+minder|\bich\s+werde\s+die\s+miete.*mindern/i.test(body);
   if (cat.includes("mietminderung") || subjectHasMietminderung || bodyHasMietminderungIntent) {
     writeFact(entityId, "legal.mietminderung", "true", source.id, body.slice(0, 120), now);
@@ -626,7 +569,7 @@ function extractEmailFacts(entityId: string, source: Source, body: string, categ
   }
 
   // Sonderumlage: only when subject mentions it OR body has "Einspruch gegen ... Sonderumlage"
-  const subjectHasSonderumlage = /sonderumlage/i.test(subject);
+  const subjectHasSonderumlage = /sonderumlage/i.test(subjectStr);
   if (subjectHasSonderumlage || /einspruch[^.]*sonderumlage|sonderumlage[^.]*einspruch/i.test(body)) {
     writeFact(entityId, "legal.sonderumlage_dispute", "true", source.id, body.slice(0, 120), now);
   }

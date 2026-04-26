@@ -39,6 +39,40 @@ const PDFJS_BASE = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSIO
 
 let pdfJsPromise: Promise<PdfJs> | null = null;
 
+/**
+ * Cache rendered pages per file so re-opening the same PDF for a
+ * different fact is instant. Key = `${file.name}:${file.size}` —
+ * stable enough for a session.
+ *
+ * Cap at 12 entries so a curious user opening dozens of different
+ * sources doesn't hold canvases for every one.
+ */
+type RenderedPage = {
+  pageNum: number;
+  width: number;
+  height: number;
+  canvas: HTMLCanvasElement;
+  /** Pre-built per-line geometry the quote-matcher consumes directly. */
+  lines: Array<{ y: number; items: LineItem[]; text: string }>;
+};
+type FileCacheEntry = {
+  doc: PdfDoc;
+  totalPages: number;
+  pages: Map<number, RenderedPage>;
+};
+const FILE_CACHE = new Map<string, FileCacheEntry>();
+const FILE_CACHE_LIMIT = 12;
+function fileKey(f: File): string {
+  return `${f.name}:${f.size}`;
+}
+function rememberFile(key: string, entry: FileCacheEntry) {
+  if (FILE_CACHE.size >= FILE_CACHE_LIMIT) {
+    const first = FILE_CACHE.keys().next().value;
+    if (first) FILE_CACHE.delete(first);
+  }
+  FILE_CACHE.set(key, entry);
+}
+
 type LineItem = { str: string; x: number; y: number; w: number; h: number };
 
 /**
@@ -108,6 +142,57 @@ function makeRect(
     w: maxX - minX + 2,
     h: maxY - minY + 2,
   };
+}
+
+/**
+ * Re-run the per-line quote matcher against an already-rendered page's
+ * cached line geometry. Used when the user opens a different fact whose
+ * source is the same PDF — we skip rasterization entirely and only
+ * compute fresh highlight rects.
+ */
+function computeRectsForCachedPage(
+  page: RenderedPage,
+  spans: Span[],
+): Array<{ quote: string; x: number; y: number; w: number; h: number }> {
+  const rects: Array<{ quote: string; x: number; y: number; w: number; h: number }> = [];
+  const seen = new Set<string>();
+  for (const span of spans) {
+    const q = (span.quote ?? "").trim();
+    if (!q || q.length < 3 || seen.has(q)) continue;
+    const normQ = q.replace(/\s+/g, " ");
+    let matched = false;
+    for (let i = 0; i < page.lines.length && !matched; i++) {
+      if (page.lines[i].text.includes(normQ)) {
+        const its = pickLineItemsForSubstring(page.lines[i].items, page.lines[i].text, normQ);
+        if (its.length > 0) {
+          rects.push(makeRect(its, q));
+          matched = true;
+          break;
+        }
+      }
+      for (let j = i + 1; j < Math.min(page.lines.length, i + 8); j++) {
+        const joined = page.lines.slice(i, j + 1).map((l) => l.text).join(" ");
+        const qs = joined.indexOf(normQ);
+        if (qs < 0) continue;
+        const qe = qs + normQ.length;
+        let cursor = 0;
+        for (let k = i; k <= j; k++) {
+          const lineStart = cursor;
+          const lineEnd = lineStart + page.lines[k].text.length;
+          cursor = lineEnd + 1;
+          const sliceStart = Math.max(qs, lineStart) - lineStart;
+          const sliceEnd = Math.min(qe, lineEnd) - lineStart;
+          if (sliceEnd <= 0 || sliceStart >= page.lines[k].text.length) continue;
+          const its = pickLineItemsForRange(page.lines[k].items, sliceStart, sliceEnd);
+          if (its.length > 0) rects.push(makeRect(its, q));
+        }
+        matched = true;
+        break;
+      }
+    }
+    if (matched) seen.add(q);
+  }
+  return rects;
 }
 
 function loadPdfJs(): Promise<PdfJs> {
@@ -185,14 +270,74 @@ export function PdfHighlightView({
         // confuse the loader); the CDN script is one less moving part and
         // the lib caches at the browser level so subsequent uploads skip it.
         const pdfjs = await loadPdfJs();
-        const buf = await file.arrayBuffer();
-        const doc = await pdfjs.getDocument({ data: new Uint8Array(buf) }).promise;
-        const renderedPages: typeof pages = [];
+        const key = fileKey(file);
 
-        for (let pageNum = 1; pageNum <= Math.min(doc.numPages, 3); pageNum++) {
+        // Open (or reuse) the doc. We cache the parsed PdfDoc per-file
+        // so re-opening the same source for a different fact skips the
+        // ~100–200 ms parse.
+        let cache = FILE_CACHE.get(key);
+        if (!cache) {
+          const buf = await file.arrayBuffer();
+          const doc = await pdfjs.getDocument({ data: new Uint8Array(buf) }).promise;
+          cache = { doc, totalPages: doc.numPages, pages: new Map() };
+          rememberFile(key, cache);
+        }
+        if (cancelled) return;
+
+        // Decide which pages to render. Scan getTextContent on each page
+        // and pick every one that contains a quote we care about — but
+        // cap at 3 pages so an unbounded multi-span upload doesn't
+        // rasterize the whole document. If no match found anywhere
+        // (tabular PDFs whose text content order breaks substring
+        // matching) fall back to page 1; the per-line matcher in the
+        // render loop will still try to locate the quote there.
+        const targetPages = new Set<number>();
+        const wantQuotes = spans
+          .map((s) => (s.quote ?? "").trim().replace(/\s+/g, " "))
+          .filter((q) => q.length >= 3);
+        const MAX_PAGES = 3;
+        for (let pageNum = 1; pageNum <= cache.totalPages && targetPages.size < MAX_PAGES; pageNum++) {
+          // If we've already cached this page's lines, scan the cached
+          // text directly without re-fetching getTextContent.
+          const cachedPage = cache.pages.get(pageNum);
+          let flat: string;
+          if (cachedPage) {
+            flat = cachedPage.lines.map((l) => l.text).join(" ");
+          } else {
+            const page = await cache.doc.getPage(pageNum);
+            const tc = await page.getTextContent();
+            flat = (tc.items as Array<{ str?: string }>)
+              .map((it) => it.str ?? "")
+              .join(" ")
+              .replace(/\s+/g, " ");
+          }
+          if (wantQuotes.some((q) => flat.includes(q.slice(0, 80)))) {
+            targetPages.add(pageNum);
+          }
+        }
+        if (targetPages.size === 0) targetPages.add(1);
+        if (cancelled) return;
+
+        const renderedPages: typeof pages = [];
+        const SCALE = 1.25; // 1.5 → 1.25 = ~30% fewer pixels to rasterize
+        for (const pageNum of targetPages) {
           if (cancelled) break;
-          const page = await doc.getPage(pageNum);
-          const viewport = page.getViewport({ scale: 1.5 });
+
+          // Cache hit: reuse the canvas + line geometry directly.
+          const cached = cache.pages.get(pageNum);
+          if (cached) {
+            const recomputed = computeRectsForCachedPage(cached, spans);
+            renderedPages.push({
+              width: cached.width,
+              height: cached.height,
+              canvas: cached.canvas,
+              rects: recomputed,
+            });
+            continue;
+          }
+
+          const page = await cache.doc.getPage(pageNum);
+          const viewport = page.getViewport({ scale: SCALE });
 
           const canvas = document.createElement("canvas");
           canvas.width = viewport.width;
@@ -318,6 +463,17 @@ export function PdfHighlightView({
             height: viewport.height,
             canvas,
             rects,
+          });
+
+          // Cache the rasterized canvas + line geometry. Subsequent opens
+          // for any other quote on the same page skip rasterization
+          // entirely and just recompute rects.
+          cache.pages.set(pageNum, {
+            pageNum,
+            width: viewport.width,
+            height: viewport.height,
+            canvas,
+            lines,
           });
         }
 

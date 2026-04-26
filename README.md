@@ -122,7 +122,7 @@ threat model, and known risks in the hackathon build.
 
 ## License
 
-[Business Source License 1.1](LICENSE). Converts to Apache 2.0 on 2028-04-24.
+[Business Source License 1.1](LICENSE). Converts to Apache 2.0 on 2030-04-26.
 
 ---
 

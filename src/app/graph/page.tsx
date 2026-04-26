@@ -54,7 +54,6 @@ const EDGE_COLOR: Record<string, string> = {
 };
 
 const LAYOUT_OPTIONS = [
-  { value: "force", label: "Force-directed" },
   { value: "dagre", label: "Hierarchical" },
   { value: "radial", label: "Radial" },
   { value: "concentric", label: "Concentric" },
@@ -66,7 +65,7 @@ export default function GraphPage() {
   const [data, setData] = useState<GraphPayload | null>(null);
   const [filterType, setFilterType] = useState<string | null>(null);
   const [hovered, setHovered] = useState<GraphNode | null>(null);
-  const [layout, setLayout] = useState<LayoutKey>("force");
+  const [layout, setLayout] = useState<LayoutKey>("dagre");
   const containerRef = useRef<HTMLDivElement | null>(null);
   const graphRef = useRef<unknown | null>(null);
 
@@ -149,41 +148,30 @@ export default function GraphPage() {
       // Layout config per chosen mode. G6 v5 picks reasonable defaults but
       // these tunings keep the dataset (~133 nodes) readable.
       const layoutConfig =
-        layout === "force"
+        layout === "dagre"
           ? {
-              type: "force",
-              preventOverlap: true,
-              nodeSize: 32,
-              linkDistance: (edge: { data?: { kind: string } }) =>
-                edge.data?.kind === "parent" ? 80 : 110,
-              nodeStrength: -120,
-              edgeStrength: 0.55,
-              animation: true,
+              type: "dagre",
+              rankdir: "LR",
+              nodesep: 14,
+              ranksep: 60,
             }
-          : layout === "dagre"
+          : layout === "radial"
             ? {
-                type: "dagre",
-                rankdir: "LR",
-                nodesep: 14,
-                ranksep: 60,
+                type: "radial",
+                unitRadius: 110,
+                preventOverlap: true,
+                nodeSize: 30,
+                focusNode: data.nodes.find((n) => n.type === "weg")?.id,
               }
-            : layout === "radial"
-              ? {
-                  type: "radial",
-                  unitRadius: 110,
-                  preventOverlap: true,
-                  nodeSize: 30,
-                  focusNode: data.nodes.find((n) => n.type === "weg")?.id,
-                }
-              : {
-                  type: "concentric",
-                  preventOverlap: true,
-                  nodeSize: 30,
-                  // Concentric ordering: WEG center, buildings inner ring,
-                  // units mid, people outer.
-                  sortBy: (n: { data: { type: string } }) =>
-                    ({ weg: 5, building: 4, unit: 3, contractor: 2, tenant: 1, owner: 1 }[n.data.type] ?? 0),
-                };
+            : {
+                type: "concentric",
+                preventOverlap: true,
+                nodeSize: 30,
+                // Concentric ordering: WEG center, buildings inner ring,
+                // units mid, people outer.
+                sortBy: (n: { data: { type: string } }) =>
+                  ({ weg: 5, building: 4, unit: 3, contractor: 2, tenant: 1, owner: 1 }[n.data.type] ?? 0),
+              };
 
       const Graph = (G6 as unknown as { Graph: new (cfg: object) => { destroy?: () => void; render: () => Promise<void>; on: (e: string, cb: (ev: { target: { id: string } }) => void) => void; fitView: () => void } }).Graph;
 

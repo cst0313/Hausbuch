@@ -160,44 +160,23 @@ export default function SandboxPage() {
   }, []);
 
   /**
-   * Sample bundle: pulls a curated subset of REAL recs from the seeded
-   * corpus — five tenants with the richest mix of email threads,
-   * incident types, and legal escalations. The recs come back with full
-   * email_chain + actions, so the sandbox StreamPanel + click-through
-   * behaves identically to the live /dashboard. No hand-crafted fixture.
+   * Sample bundle: served as a precomputed JSON fixture at
+   * /sandbox/sample-bundle-recs.json. Captured ONCE via
+   * `node scripts/build-sample-fixture.mjs` from the live engine and
+   * checked into the repo, so loading is one fetch + one paint with
+   * no engine round-trip. Re-run the script if the rec engine logic
+   * or the demo allowlist changes.
    */
   const loadSample = async () => {
     setBusy("loading-sample");
     setMessage(null);
     try {
-      const data = (await fetch("/api/recommendations").then((r) => r.json())) as {
-        recommendations?: SandboxRec[];
-      };
-      const all = data.recommendations ?? [];
-      const allow = new Set(DEMO_ENTITY_IDS);
-      const filtered = all.filter((r) => allow.has(r.entity_id));
-      // Severity-sort and cap so the demo opens with a tight queue.
-      const order: Record<SandboxRec["severity"], number> = {
-        critical: 0,
-        high: 1,
-        medium: 2,
-        low: 3,
-      };
-      const ranked = filtered
-        .sort((a, b) => order[a.severity] - order[b.severity])
-        .slice(0, DEMO_REC_LIMIT);
-      // Track these entities as in-scope so any subsequent uploads
-      // accumulate into the same sandbox view.
+      const data = (await fetch("/sandbox/sample-bundle-recs.json").then((r) => r.json())) as SampleFixture;
+      const ranked = data.recommendations ?? [];
       sandboxEntityIds.current = new Set(ranked.map((r) => r.entity_id));
       setRecs(ranked);
-      setSummary({
-        files_total: ranked.length,
-        files_processed: ranked.length,
-        facts_added: ranked.reduce((n, r) => n + (r.facts?.length ?? 0), 0),
-        entities_touched: sandboxEntityIds.current.size,
-        open_recs: ranked.length,
-      });
-      setInfoOnly([]);
+      setSummary(data.summary);
+      setInfoOnly(data.info_only ?? []);
       setState("sample");
       setMessage(null);
     } catch (err) {

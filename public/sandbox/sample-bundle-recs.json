@@ -1,240 +1,830 @@
 {
+  "generated_at": "2026-04-26T10:07:30.912Z",
   "summary": {
-    "files_total": 7,
-    "files_processed": 7,
-    "facts_added": 87,
-    "entities_touched": 6,
-    "open_recs": 4
+    "files_total": 6,
+    "files_processed": 6,
+    "facts_added": 14,
+    "entities_touched": 5,
+    "open_recs": 6
   },
   "recommendations": [
     {
-      "id": "sandbox:rec:tenant:MIE-022:mahnung",
+      "id": "rec:tenant:MIE-017:mietminderung",
       "severity": "critical",
-      "entity_id": "tenant:MIE-022",
-      "entity_name": "Herr Carsten Austermühle",
+      "entity_id": "tenant:MIE-017",
+      "entity_name": "Frau Edeltraud Renner",
       "entity_type": "tenant",
-      "category": "financial.mahnung",
-      "title": "Mahnung — Mietrückstand 2 Monate",
-      "title_en": "Dunning — 2 months of rent in arrears",
-      "summary": "Carsten Austermühle hat seit zwei Monaten keine Miete gezahlt. Mahnstufe 2 — gerichtliches Verfahren droht innerhalb von 14 Tagen.",
-      "summary_en": "Carsten Austermühle is two months in arrears on rent. Dunning stage 2 — court action threatened within 14 days.",
+      "category": "legal.mietminderung",
+      "title": "Mietminderung 15% angekündigt",
+      "title_en": "Rent reduction 15% announced",
+      "summary": "Frau Edeltraud Renner hat eine Mietminderung um 15% angekündigt — Ursache: Wasserschaden + Schimmelbefall. Erst Mängel beheben, dann rechtliche Prüfung.",
+      "summary_en": "Frau Edeltraud Renner has announced a 15% rent reduction — root cause: water damage + mold. Fix the underlying issue before legal review.",
+      "root_causes": [
+        {
+          "type": "water_damage",
+          "score": 1,
+          "open_incident_count": 6
+        },
+        {
+          "type": "mold",
+          "score": 1,
+          "open_incident_count": 6
+        }
+      ],
       "facts": [
         {
-          "predicate": "mahnung.stufe",
-          "value": "2",
-          "source_title": "02_mahnung_austermuehle",
-          "known_from": "2025-12-15T09:00:00.000Z",
-          "valid_from": "2025-12-15"
+          "predicate": "legal.mietminderung.prozent",
+          "value": "15",
+          "source_title": "Mietminderung Ankuendigung",
+          "known_from": "2024-01-19T15:35:00.000Z",
+          "valid_from": null,
+          "valid_to": null
         },
         {
-          "predicate": "mahnung.frist_tage",
-          "value": "14",
-          "source_title": "02_mahnung_austermuehle",
-          "known_from": "2025-12-15T09:00:00.000Z"
-        },
-        {
-          "predicate": "mahnung.offener_betrag",
-          "value": "1722.00",
-          "source_title": "02_mahnung_austermuehle",
-          "known_from": "2025-12-15T09:00:00.000Z"
+          "predicate": "legal.mietminderung",
+          "value": "true",
+          "source_title": "Mietminderung Ankuendigung",
+          "known_from": "2026-01-08T17:46:00.000Z",
+          "valid_from": null,
+          "valid_to": null
         }
       ],
       "email_chain": [
         {
-          "source_id": "sandbox:src:02_mahnung_austermuehle",
-          "title": "02_mahnung_austermuehle",
-          "from": "Huber & Partner Immobilienverwaltung",
-          "date": "2025-12-15T09:00:00.000Z",
-          "excerpt": "Sehr geehrter Herr Austermühle, hiermit mahnen wir den ausstehenden Mietzins für die Monate November und Dezember 2025 in Höhe von €1.722,00 an. Bitte begleichen Sie den Betrag innerhalb von 14 Tagen, andernfalls werden wir gerichtliche Schritte einleiten."
+          "source_id": "src_20260108-174600-email-06577-eml_078ac7",
+          "title": "Mietminderung Ankuendigung",
+          "from": "edeltraud.renner@gmx.de",
+          "date": "2026-01-08T17:46:00.000Z",
+          "excerpt": "Sehr geehrte Verwaltung,\n\nda die Baumaengel (Wasserschaden, Schimmel) in meiner Wohnung WE 29 seit ueber 3 Monaten nicht behoben sind, werde ich die Miete ab 07.02.2026 um 15% mindern. Eine rechtliche"
         }
       ],
       "actions": [
         {
           "type": "draft_email",
-          "label": "Final notice to Austermühle",
-          "label_de": "Letzte Mahnung an Austermühle",
+          "label": "Status update to Frau Edeltraud Renner",
+          "label_de": "Statusupdate an Frau Edeltraud Renner",
+          "recipient": {
+            "entity_id": "tenant:MIE-017",
+            "name": "Frau Edeltraud Renner",
+            "email": "edeltraud.renner@gmx.de",
+            "role": "tenant"
+          },
           "draft_context": {
             "from": "Huber & Partner Immobilienverwaltung GmbH <info@huber-partner-verwaltung.de>",
-            "to": "Herr Carsten Austermühle",
-            "to_email": "carsten.austermuehle@email.de",
-            "subject": "Letzte Mahnung — Mietrückstand WE 23",
-            "incident_summary": "Mahnstufe 2 erreicht; Mietrückstand €1.722. Frist 14 Tage, danach Gerichtsverfahren.",
-            "entity_context": "Mieter: Carsten Austermühle. Status: 2 Monate Rückstand.",
+            "to": "Frau Edeltraud Renner",
+            "to_email": "edeltraud.renner@gmx.de",
+            "subject": "Statusupdate: Mietminderung — Frau Edeltraud Renner",
+            "incident_summary": "Statusupdate an den Mieter: Erhalt der Mietminderungs-Ankündigung (15%) wegen Wasserschaden + Schimmelbefall bestätigt. Wir prüfen die nächsten Schritte und melden uns mit einem konkreten Reparaturtermin innerhalb der nächsten Werktage. Höflich, kein Eingeständnis von Verschulden.",
+            "entity_context": "Mieter: Frau Edeltraud Renner. Ankündigung: 15% Minderung. Wir haben bereits geantwortet — dies ist ein proaktives Statusupdate.",
             "language": "de",
             "tone": "formal"
+          }
+        },
+        {
+          "type": "dispatch_contractor",
+          "label": "Dispatch Sanitaer Schulze GmbH for water damage",
+          "label_de": "Sanitaer Schulze GmbH beauftragen — Wasserschaden",
+          "recipient": {
+            "entity_id": "contractor:DL-013",
+            "name": "Sanitaer Schulze GmbH",
+            "email": "ernst.august.jessel@sanitaer-schulze.de",
+            "role": "contractor"
+          },
+          "draft_context": {
+            "from": "Huber & Partner Immobilienverwaltung GmbH <info@huber-partner-verwaltung.de>",
+            "to": "Sanitaer Schulze GmbH",
+            "to_email": "ernst.august.jessel@sanitaer-schulze.de",
+            "subject": "Reparaturauftrag: Wasserschaden — Mietminderung anhängig",
+            "incident_summary": "Wasserschaden ist Ursache einer angekündigten Mietminderung. Sofortige Behebung erforderlich.",
+            "entity_context": "6 offene Vorgänge dieses Typs auf der Einheit.",
+            "language": "de",
+            "tone": "urgent"
+          }
+        },
+        {
+          "type": "dispatch_contractor",
+          "label": "Dispatch Sanitaer Schulze GmbH for mold",
+          "label_de": "Sanitaer Schulze GmbH beauftragen — Schimmelbefall",
+          "recipient": {
+            "entity_id": "contractor:DL-013",
+            "name": "Sanitaer Schulze GmbH",
+            "email": "ernst.august.jessel@sanitaer-schulze.de",
+            "role": "contractor"
+          },
+          "draft_context": {
+            "from": "Huber & Partner Immobilienverwaltung GmbH <info@huber-partner-verwaltung.de>",
+            "to": "Sanitaer Schulze GmbH",
+            "to_email": "ernst.august.jessel@sanitaer-schulze.de",
+            "subject": "Reparaturauftrag: Schimmelbefall — Mietminderung anhängig",
+            "incident_summary": "Schimmelbefall ist Ursache einer angekündigten Mietminderung. Sofortige Behebung erforderlich.",
+            "entity_context": "6 offene Vorgänge dieses Typs auf der Einheit.",
+            "language": "de",
+            "tone": "urgent"
           }
         },
         {
           "type": "escalate",
-          "label": "Hand off to legal counsel",
-          "label_de": "An Anwalt übergeben"
-        }
-      ],
-      "created_at": "2025-12-15T09:00:00.000Z"
-    },
-    {
-      "id": "sandbox:rec:tenant:we49:kuendigung",
-      "severity": "high",
-      "entity_id": "tenant:we49",
-      "entity_name": "Mieter WE 49",
-      "entity_type": "tenant",
-      "category": "legal.kuendigung",
-      "title": "Kündigung eingegangen — WE 49",
-      "title_en": "Termination received — WE 49",
-      "summary": "Schriftliche Kündigung mit ordentlicher Frist eingegangen. Übergabetermin und Nachmietersuche einleiten.",
-      "summary_en": "Written termination received with proper notice. Schedule handover and start tenant search.",
-      "facts": [
-        {
-          "predicate": "kuendigung.kuendigungsdatum",
-          "value": "2026-03-31",
-          "source_title": "07_kuendigung_we49",
-          "known_from": "2026-01-02T11:30:00.000Z",
-          "valid_from": "2026-03-31"
+          "label": "Legal review pending",
+          "label_de": "Rechtsprüfung läuft"
         },
         {
-          "predicate": "kuendigung.art",
-          "value": "ordentlich",
-          "source_title": "07_kuendigung_we49",
-          "known_from": "2026-01-02T11:30:00.000Z"
+          "type": "follow_up",
+          "label": "Follow up with Frau Edeltraud Renner if no reply",
+          "label_de": "Nachfassen bei Frau Edeltraud Renner wenn keine Antwort"
+        }
+      ],
+      "created_at": "2026-01-08T17:46:00.000Z",
+      "entity_reputation": {
+        "score": 0.55,
+        "band": "neutral",
+        "incidents_open": 13,
+        "incidents_total": 13,
+        "mahnung_count": 1,
+        "related_units": [
+          "unit:EH-029"
+        ]
+      }
+    },
+    {
+      "id": "rec:tenant:MIE-016:mietminderung",
+      "severity": "critical",
+      "entity_id": "tenant:MIE-016",
+      "entity_name": "Frau Magrit Mitschke",
+      "entity_type": "tenant",
+      "category": "legal.mietminderung",
+      "title": "Mietminderung 15% angekündigt",
+      "title_en": "Rent reduction 15% announced",
+      "summary": "Frau Magrit Mitschke hat eine Mietminderung um 15% angekündigt — Ursache: Wasserschaden + Schimmelbefall. Erst Mängel beheben, dann rechtliche Prüfung.",
+      "summary_en": "Frau Magrit Mitschke has announced a 15% rent reduction — root cause: water damage + mold. Fix the underlying issue before legal review.",
+      "root_causes": [
+        {
+          "type": "water_damage",
+          "score": 1,
+          "open_incident_count": 4
+        },
+        {
+          "type": "mold",
+          "score": 1,
+          "open_incident_count": 4
+        }
+      ],
+      "facts": [
+        {
+          "predicate": "legal.mietminderung.prozent",
+          "value": "15",
+          "source_title": "Mietminderung Ankuendigung",
+          "known_from": "2024-12-27T15:40:00.000Z",
+          "valid_from": null,
+          "valid_to": null
+        },
+        {
+          "predicate": "legal.mietminderung",
+          "value": "true",
+          "source_title": "Mietminderung Ankuendigung",
+          "known_from": "2026-01-03T12:33:00.000Z",
+          "valid_from": null,
+          "valid_to": null
         }
       ],
       "email_chain": [
         {
-          "source_id": "sandbox:src:07_kuendigung_we49",
-          "title": "07_kuendigung_we49",
-          "from": "Mieter WE 49",
-          "date": "2026-01-02T11:30:00.000Z",
-          "excerpt": "Sehr geehrte Damen und Herren, hiermit kündige ich den Mietvertrag für die Wohnung WE 49 fristgerecht zum 31.03.2026. Bitte bestätigen Sie mir den Kündigungstermin schriftlich."
+          "source_id": "src_20260103-123300-email-06555-eml_7405a5",
+          "title": "Mietminderung Ankuendigung",
+          "from": "magrit.mitschke@gmail.com",
+          "date": "2026-01-03T12:33:00.000Z",
+          "excerpt": "Sehr geehrte Verwaltung,\n\nda die Baumaengel (Wasserschaden, Schimmel) in meiner Wohnung WE 32 seit ueber 3 Monaten nicht behoben sind, werde ich die Miete ab 02.02.2026 um 15% mindern. Eine rechtliche"
         }
       ],
       "actions": [
         {
           "type": "draft_email",
-          "label": "Confirm termination",
-          "label_de": "Kündigungsbestätigung",
+          "label": "Status update to Frau Magrit Mitschke",
+          "label_de": "Statusupdate an Frau Magrit Mitschke",
+          "recipient": {
+            "entity_id": "tenant:MIE-016",
+            "name": "Frau Magrit Mitschke",
+            "email": "magrit.mitschke@gmail.com",
+            "role": "tenant"
+          },
           "draft_context": {
             "from": "Huber & Partner Immobilienverwaltung GmbH <info@huber-partner-verwaltung.de>",
-            "to": "Mieter WE 49",
-            "to_email": "",
-            "subject": "Kündigungsbestätigung — WE 49",
-            "incident_summary": "Kündigung WE 49 zum 31.03.2026 bestätigen. Übergabetermin innerhalb von 14 Tagen vorschlagen.",
-            "entity_context": "Mieter WE 49. Ordentliche Kündigung. Nachmietersuche starten.",
+            "to": "Frau Magrit Mitschke",
+            "to_email": "magrit.mitschke@gmail.com",
+            "subject": "Statusupdate: Mietminderung — Frau Magrit Mitschke",
+            "incident_summary": "Statusupdate an den Mieter: Erhalt der Mietminderungs-Ankündigung (15%) wegen Wasserschaden + Schimmelbefall bestätigt. Wir prüfen die nächsten Schritte und melden uns mit einem konkreten Reparaturtermin innerhalb der nächsten Werktage. Höflich, kein Eingeständnis von Verschulden.",
+            "entity_context": "Mieter: Frau Magrit Mitschke. Ankündigung: 15% Minderung. Wir haben bereits geantwortet — dies ist ein proaktives Statusupdate.",
+            "language": "de",
+            "tone": "formal"
+          }
+        },
+        {
+          "type": "dispatch_contractor",
+          "label": "Dispatch Sanitaer Schulze GmbH for water damage",
+          "label_de": "Sanitaer Schulze GmbH beauftragen — Wasserschaden",
+          "recipient": {
+            "entity_id": "contractor:DL-013",
+            "name": "Sanitaer Schulze GmbH",
+            "email": "ernst.august.jessel@sanitaer-schulze.de",
+            "role": "contractor"
+          },
+          "draft_context": {
+            "from": "Huber & Partner Immobilienverwaltung GmbH <info@huber-partner-verwaltung.de>",
+            "to": "Sanitaer Schulze GmbH",
+            "to_email": "ernst.august.jessel@sanitaer-schulze.de",
+            "subject": "Reparaturauftrag: Wasserschaden — Mietminderung anhängig",
+            "incident_summary": "Wasserschaden ist Ursache einer angekündigten Mietminderung. Sofortige Behebung erforderlich.",
+            "entity_context": "4 offene Vorgänge dieses Typs auf der Einheit.",
+            "language": "de",
+            "tone": "urgent"
+          }
+        },
+        {
+          "type": "dispatch_contractor",
+          "label": "Dispatch Sanitaer Schulze GmbH for mold",
+          "label_de": "Sanitaer Schulze GmbH beauftragen — Schimmelbefall",
+          "recipient": {
+            "entity_id": "contractor:DL-013",
+            "name": "Sanitaer Schulze GmbH",
+            "email": "ernst.august.jessel@sanitaer-schulze.de",
+            "role": "contractor"
+          },
+          "draft_context": {
+            "from": "Huber & Partner Immobilienverwaltung GmbH <info@huber-partner-verwaltung.de>",
+            "to": "Sanitaer Schulze GmbH",
+            "to_email": "ernst.august.jessel@sanitaer-schulze.de",
+            "subject": "Reparaturauftrag: Schimmelbefall — Mietminderung anhängig",
+            "incident_summary": "Schimmelbefall ist Ursache einer angekündigten Mietminderung. Sofortige Behebung erforderlich.",
+            "entity_context": "4 offene Vorgänge dieses Typs auf der Einheit.",
+            "language": "de",
+            "tone": "urgent"
+          }
+        },
+        {
+          "type": "escalate",
+          "label": "Legal review pending",
+          "label_de": "Rechtsprüfung läuft"
+        },
+        {
+          "type": "follow_up",
+          "label": "Follow up with Frau Magrit Mitschke if no reply",
+          "label_de": "Nachfassen bei Frau Magrit Mitschke wenn keine Antwort"
+        }
+      ],
+      "created_at": "2026-01-03T12:33:00.000Z",
+      "entity_reputation": {
+        "score": 0.62,
+        "band": "neutral",
+        "incidents_open": 11,
+        "incidents_total": 11,
+        "mahnung_count": 6,
+        "related_units": [
+          "unit:EH-032"
+        ]
+      }
+    },
+    {
+      "id": "rec:tenant:MIE-008:mietminderung",
+      "severity": "critical",
+      "entity_id": "tenant:MIE-008",
+      "entity_name": "Herr Ferenc Stahr",
+      "entity_type": "tenant",
+      "category": "legal.mietminderung",
+      "title": "Mietminderung 15% angekündigt",
+      "title_en": "Rent reduction 15% announced",
+      "summary": "Herr Ferenc Stahr hat eine Mietminderung um 15% angekündigt — Ursache: Wasserschaden + Schimmelbefall. Erst Mängel beheben, dann rechtliche Prüfung.",
+      "summary_en": "Herr Ferenc Stahr has announced a 15% rent reduction — root cause: water damage + mold. Fix the underlying issue before legal review.",
+      "root_causes": [
+        {
+          "type": "water_damage",
+          "score": 1,
+          "open_incident_count": 5
+        },
+        {
+          "type": "mold",
+          "score": 1,
+          "open_incident_count": 4
+        }
+      ],
+      "facts": [
+        {
+          "predicate": "legal.mietminderung.prozent",
+          "value": "15",
+          "source_title": "Mietminderung Ankuendigung",
+          "known_from": "2024-07-14T11:19:00.000Z",
+          "valid_from": null,
+          "valid_to": null
+        },
+        {
+          "predicate": "legal.mietminderung",
+          "value": "true",
+          "source_title": "Mietminderung Ankuendigung",
+          "known_from": "2025-07-01T11:08:00.000Z",
+          "valid_from": null,
+          "valid_to": null
+        }
+      ],
+      "email_chain": [
+        {
+          "source_id": "src_20250701-110800-email-04918-eml_e5ac5f",
+          "title": "Mietminderung Ankuendigung",
+          "from": "ferenc.stahr@gmx.de",
+          "date": "2025-07-01T11:08:00.000Z",
+          "excerpt": "Sehr geehrte Verwaltung,\n\nda die Baumaengel (Wasserschaden, Schimmel) in meiner Wohnung WE 03 seit ueber 3 Monaten nicht behoben sind, werde ich die Miete ab 31.07.2025 um 15% mindern. Eine rechtliche"
+        }
+      ],
+      "actions": [
+        {
+          "type": "draft_email",
+          "label": "Status update to Herr Ferenc Stahr",
+          "label_de": "Statusupdate an Herr Ferenc Stahr",
+          "recipient": {
+            "entity_id": "tenant:MIE-008",
+            "name": "Herr Ferenc Stahr",
+            "email": "ferenc.stahr@gmx.de",
+            "role": "tenant"
+          },
+          "draft_context": {
+            "from": "Huber & Partner Immobilienverwaltung GmbH <info@huber-partner-verwaltung.de>",
+            "to": "Herr Ferenc Stahr",
+            "to_email": "ferenc.stahr@gmx.de",
+            "subject": "Statusupdate: Mietminderung — Herr Ferenc Stahr",
+            "incident_summary": "Statusupdate an den Mieter: Erhalt der Mietminderungs-Ankündigung (15%) wegen Wasserschaden + Schimmelbefall bestätigt. Wir prüfen die nächsten Schritte und melden uns mit einem konkreten Reparaturtermin innerhalb der nächsten Werktage. Höflich, kein Eingeständnis von Verschulden.",
+            "entity_context": "Mieter: Herr Ferenc Stahr. Ankündigung: 15% Minderung. Wir haben bereits geantwortet — dies ist ein proaktives Statusupdate.",
+            "language": "de",
+            "tone": "formal"
+          }
+        },
+        {
+          "type": "dispatch_contractor",
+          "label": "Dispatch Sanitaer Schulze GmbH for water damage",
+          "label_de": "Sanitaer Schulze GmbH beauftragen — Wasserschaden",
+          "recipient": {
+            "entity_id": "contractor:DL-013",
+            "name": "Sanitaer Schulze GmbH",
+            "email": "ernst.august.jessel@sanitaer-schulze.de",
+            "role": "contractor"
+          },
+          "draft_context": {
+            "from": "Huber & Partner Immobilienverwaltung GmbH <info@huber-partner-verwaltung.de>",
+            "to": "Sanitaer Schulze GmbH",
+            "to_email": "ernst.august.jessel@sanitaer-schulze.de",
+            "subject": "Reparaturauftrag: Wasserschaden — Mietminderung anhängig",
+            "incident_summary": "Wasserschaden ist Ursache einer angekündigten Mietminderung. Sofortige Behebung erforderlich.",
+            "entity_context": "5 offene Vorgänge dieses Typs auf der Einheit.",
+            "language": "de",
+            "tone": "urgent"
+          }
+        },
+        {
+          "type": "dispatch_contractor",
+          "label": "Dispatch Sanitaer Schulze GmbH for mold",
+          "label_de": "Sanitaer Schulze GmbH beauftragen — Schimmelbefall",
+          "recipient": {
+            "entity_id": "contractor:DL-013",
+            "name": "Sanitaer Schulze GmbH",
+            "email": "ernst.august.jessel@sanitaer-schulze.de",
+            "role": "contractor"
+          },
+          "draft_context": {
+            "from": "Huber & Partner Immobilienverwaltung GmbH <info@huber-partner-verwaltung.de>",
+            "to": "Sanitaer Schulze GmbH",
+            "to_email": "ernst.august.jessel@sanitaer-schulze.de",
+            "subject": "Reparaturauftrag: Schimmelbefall — Mietminderung anhängig",
+            "incident_summary": "Schimmelbefall ist Ursache einer angekündigten Mietminderung. Sofortige Behebung erforderlich.",
+            "entity_context": "4 offene Vorgänge dieses Typs auf der Einheit.",
+            "language": "de",
+            "tone": "urgent"
+          }
+        },
+        {
+          "type": "escalate",
+          "label": "Legal review pending",
+          "label_de": "Rechtsprüfung läuft"
+        },
+        {
+          "type": "follow_up",
+          "label": "Follow up with Herr Ferenc Stahr if no reply",
+          "label_de": "Nachfassen bei Herr Ferenc Stahr wenn keine Antwort"
+        }
+      ],
+      "created_at": "2025-07-01T11:08:00.000Z",
+      "entity_reputation": {
+        "score": 0.68,
+        "band": "neutral",
+        "incidents_open": 10,
+        "incidents_total": 10,
+        "mahnung_count": 1,
+        "related_units": [
+          "unit:EH-003"
+        ]
+      }
+    },
+    {
+      "id": "rec:tenant:MIE-018:mietminderung",
+      "severity": "critical",
+      "entity_id": "tenant:MIE-018",
+      "entity_name": "Frau Louise Ladeck",
+      "entity_type": "tenant",
+      "category": "legal.mietminderung",
+      "title": "Mietminderung 15% angekündigt",
+      "title_en": "Rent reduction 15% announced",
+      "summary": "Frau Louise Ladeck hat eine Mietminderung um 15% angekündigt — Ursache: Wasserschaden + Schimmelbefall. Erst Mängel beheben, dann rechtliche Prüfung.",
+      "summary_en": "Frau Louise Ladeck has announced a 15% rent reduction — root cause: water damage + mold. Fix the underlying issue before legal review.",
+      "root_causes": [
+        {
+          "type": "water_damage",
+          "score": 1,
+          "open_incident_count": 6
+        },
+        {
+          "type": "mold",
+          "score": 1,
+          "open_incident_count": 6
+        }
+      ],
+      "facts": [
+        {
+          "predicate": "legal.mietminderung.prozent",
+          "value": "15",
+          "source_title": "Mietminderung Ankuendigung",
+          "known_from": "2024-05-09T10:40:00.000Z",
+          "valid_from": null,
+          "valid_to": null
+        },
+        {
+          "predicate": "legal.mietminderung",
+          "value": "true",
+          "source_title": "Mietminderung Ankuendigung",
+          "known_from": "2025-01-29T12:42:00.000Z",
+          "valid_from": null,
+          "valid_to": null
+        }
+      ],
+      "email_chain": [
+        {
+          "source_id": "src_20250129-124200-email-03593-eml_7d225f",
+          "title": "Mietminderung Ankuendigung",
+          "from": "louise.ladeck@outlook.com",
+          "date": "2025-01-29T12:42:00.000Z",
+          "excerpt": "Sehr geehrte Verwaltung,\n\nda die Baumaengel (Wasserschaden, Schimmel) in meiner Wohnung WE 35 seit ueber 3 Monaten nicht behoben sind, werde ich die Miete ab 28.02.2025 um 15% mindern. Eine rechtliche"
+        }
+      ],
+      "actions": [
+        {
+          "type": "draft_email",
+          "label": "Status update to Frau Louise Ladeck",
+          "label_de": "Statusupdate an Frau Louise Ladeck",
+          "recipient": {
+            "entity_id": "tenant:MIE-018",
+            "name": "Frau Louise Ladeck",
+            "email": "louise.ladeck@outlook.com",
+            "role": "tenant"
+          },
+          "draft_context": {
+            "from": "Huber & Partner Immobilienverwaltung GmbH <info@huber-partner-verwaltung.de>",
+            "to": "Frau Louise Ladeck",
+            "to_email": "louise.ladeck@outlook.com",
+            "subject": "Statusupdate: Mietminderung — Frau Louise Ladeck",
+            "incident_summary": "Statusupdate an den Mieter: Erhalt der Mietminderungs-Ankündigung (15%) wegen Wasserschaden + Schimmelbefall bestätigt. Wir prüfen die nächsten Schritte und melden uns mit einem konkreten Reparaturtermin innerhalb der nächsten Werktage. Höflich, kein Eingeständnis von Verschulden.",
+            "entity_context": "Mieter: Frau Louise Ladeck. Ankündigung: 15% Minderung. Wir haben bereits geantwortet — dies ist ein proaktives Statusupdate.",
+            "language": "de",
+            "tone": "formal"
+          }
+        },
+        {
+          "type": "dispatch_contractor",
+          "label": "Dispatch Sanitaer Schulze GmbH for water damage",
+          "label_de": "Sanitaer Schulze GmbH beauftragen — Wasserschaden",
+          "recipient": {
+            "entity_id": "contractor:DL-013",
+            "name": "Sanitaer Schulze GmbH",
+            "email": "ernst.august.jessel@sanitaer-schulze.de",
+            "role": "contractor"
+          },
+          "draft_context": {
+            "from": "Huber & Partner Immobilienverwaltung GmbH <info@huber-partner-verwaltung.de>",
+            "to": "Sanitaer Schulze GmbH",
+            "to_email": "ernst.august.jessel@sanitaer-schulze.de",
+            "subject": "Reparaturauftrag: Wasserschaden — Mietminderung anhängig",
+            "incident_summary": "Wasserschaden ist Ursache einer angekündigten Mietminderung. Sofortige Behebung erforderlich.",
+            "entity_context": "6 offene Vorgänge dieses Typs auf der Einheit.",
+            "language": "de",
+            "tone": "urgent"
+          }
+        },
+        {
+          "type": "dispatch_contractor",
+          "label": "Dispatch Sanitaer Schulze GmbH for mold",
+          "label_de": "Sanitaer Schulze GmbH beauftragen — Schimmelbefall",
+          "recipient": {
+            "entity_id": "contractor:DL-013",
+            "name": "Sanitaer Schulze GmbH",
+            "email": "ernst.august.jessel@sanitaer-schulze.de",
+            "role": "contractor"
+          },
+          "draft_context": {
+            "from": "Huber & Partner Immobilienverwaltung GmbH <info@huber-partner-verwaltung.de>",
+            "to": "Sanitaer Schulze GmbH",
+            "to_email": "ernst.august.jessel@sanitaer-schulze.de",
+            "subject": "Reparaturauftrag: Schimmelbefall — Mietminderung anhängig",
+            "incident_summary": "Schimmelbefall ist Ursache einer angekündigten Mietminderung. Sofortige Behebung erforderlich.",
+            "entity_context": "6 offene Vorgänge dieses Typs auf der Einheit.",
+            "language": "de",
+            "tone": "urgent"
+          }
+        },
+        {
+          "type": "escalate",
+          "label": "Legal review pending",
+          "label_de": "Rechtsprüfung läuft"
+        },
+        {
+          "type": "follow_up",
+          "label": "Follow up with Frau Louise Ladeck if no reply",
+          "label_de": "Nachfassen bei Frau Louise Ladeck wenn keine Antwort"
+        }
+      ],
+      "created_at": "2025-01-29T12:42:00.000Z",
+      "entity_reputation": {
+        "score": 0.67,
+        "band": "neutral",
+        "incidents_open": 11,
+        "incidents_total": 11,
+        "mahnung_count": 2,
+        "related_units": [
+          "unit:EH-035"
+        ]
+      }
+    },
+    {
+      "id": "rec:tenant:MIE-016:mold",
+      "severity": "critical",
+      "entity_id": "tenant:MIE-016",
+      "entity_name": "Frau Magrit Mitschke",
+      "entity_type": "tenant",
+      "category": "incident.mold",
+      "title": "Schimmelbefall",
+      "title_en": "Mold",
+      "summary": "Schimmelbefall gemeldet bei Frau Magrit Mitschke. \"sehrgeehrte Verwaltung,\n\nda die Baumaengel (Wasserschaden, Schimmel) in meiner Wohunng WE 32 seit ueber 3 Monaten nicht \"",
+      "summary_en": "Mold reported by Frau Magrit Mitschke. \"sehrgeehrte Verwaltung,\n\nda die Baumaengel (Wasserschaden, Schimmel) in meiner Wohunng WE 32 seit ueber 3 Monaten nicht \"",
+      "facts": [
+        {
+          "predicate": "incident.type",
+          "value": "mold",
+          "source_title": "Mietminderung Ankuendigung",
+          "known_from": "2024-12-27T15:40:00.000Z",
+          "valid_from": null,
+          "valid_to": null
+        },
+        {
+          "predicate": "incident.type",
+          "value": "mold",
+          "source_title": "Schimmel im Schlafzimmer",
+          "known_from": "2025-03-23T11:35:00.000Z",
+          "valid_from": null,
+          "valid_to": null
+        },
+        {
+          "predicate": "incident.type",
+          "value": "mold",
+          "source_title": "Mietminderung Ankuendigung",
+          "known_from": "2025-12-21T13:56:00.000Z",
+          "valid_from": null,
+          "valid_to": null
+        },
+        {
+          "predicate": "incident.type",
+          "value": "mold",
+          "source_title": "Mietminderung Ankuendigung",
+          "known_from": "2026-01-03T12:33:00.000Z",
+          "valid_from": null,
+          "valid_to": null
+        }
+      ],
+      "email_chain": [
+        {
+          "source_id": "src_20260103-123300-email-06555-eml_7405a5",
+          "title": "Mietminderung Ankuendigung",
+          "from": "magrit.mitschke@gmail.com",
+          "date": "2026-01-03T12:33:00.000Z",
+          "excerpt": "Sehr geehrte Verwaltung,\n\nda die Baumaengel (Wasserschaden, Schimmel) in meiner Wohnung WE 32 seit ueber 3 Monaten nicht behoben sind, werde ich die Miete ab 02.02.2026 um 15% mindern. Eine rechtliche"
+        },
+        {
+          "source_id": "src_20251221-135600-email-06459-eml_cf205a",
+          "title": "Mietminderung Ankuendigung",
+          "from": "magrit.mitschke@gmail.com",
+          "date": "2025-12-21T13:56:00.000Z",
+          "excerpt": "Sehr geehrte Verwaltung,\n\nda die Baumaengel (Wasserschaden, Schimmel) in meiner Wohnung WE 32 seit ueber 3 Monaten nicht behoben sind, werde ich die Miete ab 20.01.2026 um 15% mindern. Eine rechtliche"
+        },
+        {
+          "source_id": "src_20250323-113500-email-04103-eml_d515f9",
+          "title": "Schimmel im Schlafzimmer",
+          "from": "magrit.mitschke@gmail.com",
+          "date": "2025-03-23T11:35:00.000Z",
+          "excerpt": "Guten Tag,\n\nim Schlafzimmer meiner Wohnung WE 32 bildet sich in der Ecke hinter dem Bett Schimmel. Ich lueftet regelmaessig stosslueften. Bitte um Begutachtung.\n\nDank und Gruss\nMagrit Mitschke"
+        },
+        {
+          "source_id": "src_20241227-154000-email-03294-eml_28df91",
+          "title": "Mietminderung Ankuendigung",
+          "from": "magrit.mitschke@gmail.com",
+          "date": "2024-12-27T15:40:00.000Z",
+          "excerpt": "sehrgeehrte Verwaltung,\n\nda die Baumaengel (Wasserschaden, Schimmel) in meiner Wohunng WE 32 seit ueber 3 Monaten nicht behoben sind, werde ich die Miete ab 26.01.2025 um 15% mindern. Eine rechtliche "
+        }
+      ],
+      "actions": [
+        {
+          "type": "draft_email",
+          "label": "Status update to Frau Magrit Mitschke",
+          "label_de": "Statusupdate an Frau Magrit Mitschke",
+          "recipient": {
+            "entity_id": "tenant:MIE-016",
+            "name": "Frau Magrit Mitschke",
+            "email": "magrit.mitschke@gmail.com",
+            "role": "tenant"
+          },
+          "draft_context": {
+            "from": "Huber & Partner Immobilienverwaltung GmbH <info@huber-partner-verwaltung.de>",
+            "to": "Frau Magrit Mitschke",
+            "to_email": "magrit.mitschke@gmail.com",
+            "subject": "Statusupdate: Schimmelbefall",
+            "incident_summary": "Statusupdate an den Mieter zum Vorgang \"Schimmelbefall\". Wir haben die Meldung erhalten und prüfen die nächsten Schritte; konkreter Termin folgt. Höflich, kein Eingeständnis von Verschulden.",
+            "entity_context": "Betreff: Schimmelbefall. Wir haben bereits geantwortet — dies ist ein proaktives Statusupdate.",
             "language": "de",
             "tone": "formal"
           }
         },
         {
           "type": "follow_up",
-          "label": "Schedule handover",
-          "label_de": "Übergabetermin vereinbaren"
+          "label": "Follow up with Frau Magrit Mitschke if no reply",
+          "label_de": "Nachfassen bei Frau Magrit Mitschke wenn keine Antwort",
+          "recipient": {
+            "entity_id": "tenant:MIE-016",
+            "name": "Frau Magrit Mitschke",
+            "email": "magrit.mitschke@gmail.com",
+            "role": "tenant"
+          }
         }
       ],
-      "created_at": "2026-01-02T11:30:00.000Z"
+      "created_at": "2024-12-27T15:40:00.000Z",
+      "entity_reputation": {
+        "score": 0.62,
+        "band": "neutral",
+        "incidents_open": 11,
+        "incidents_total": 11,
+        "mahnung_count": 6,
+        "related_units": [
+          "unit:EH-032"
+        ]
+      }
     },
     {
-      "id": "sandbox:rec:owner:eh018:hausgeld",
-      "severity": "medium",
-      "entity_id": "owner:eh018",
-      "entity_name": "Eigentümer EH 018",
-      "entity_type": "owner",
-      "category": "financial.hausgeld",
-      "title": "Hausgeld 2025 — Abrechnung erstellt",
-      "title_en": "Hausgeld 2025 — settlement issued",
-      "summary": "Jahresabrechnung 2025 erstellt. Nachzahlung €312,80; Zahlungsfrist 30 Tage.",
-      "summary_en": "2025 annual statement issued. Outstanding €312.80 due within 30 days.",
-      "facts": [
-        {
-          "predicate": "hausgeld.gesamtkosten",
-          "value": "5159.98",
-          "source_title": "04_hausgeld_eh018",
-          "known_from": "2026-01-08T10:00:00.000Z",
-          "valid_from": "2025-01-01"
-        },
-        {
-          "predicate": "hausgeld.nachzahlung",
-          "value": "312.80",
-          "source_title": "04_hausgeld_eh018",
-          "known_from": "2026-01-08T10:00:00.000Z"
-        }
-      ],
-      "email_chain": [
-        {
-          "source_id": "sandbox:src:04_hausgeld_eh018",
-          "title": "04_hausgeld_eh018",
-          "from": "Huber & Partner Immobilienverwaltung",
-          "date": "2026-01-08T10:00:00.000Z",
-          "excerpt": "Sehr geehrte/r Eigentümer/in EH 018, anbei erhalten Sie die Hausgeldabrechnung für das Wirtschaftsjahr 2025. Auf Basis Ihres Miteigentumsanteils ergibt sich eine Nachzahlung von €312,80."
-        }
-      ],
-      "actions": [
-        {
-          "type": "follow_up",
-          "label": "Track payment of €312.80",
-          "label_de": "Zahlung €312,80 verfolgen"
-        }
-      ],
-      "created_at": "2026-01-08T10:00:00.000Z"
-    },
-    {
-      "id": "sandbox:rec:tenant:we23:mieterhoehung",
-      "severity": "medium",
-      "entity_id": "tenant:we23",
-      "entity_name": "Mieter WE 23",
+      "id": "rec:tenant:MIE-022:mietminderung",
+      "severity": "critical",
+      "entity_id": "tenant:MIE-022",
+      "entity_name": "Herr Carsten Austermühle",
       "entity_type": "tenant",
-      "category": "legal.mieterhoehung",
-      "title": "Mieterhöhung angekündigt — WE 23",
-      "title_en": "Rent increase announced — WE 23",
-      "summary": "Mieterhöhungsverlangen verschickt. Neue Kaltmiete €920 ab 01.04.2026; Zustimmungsfrist 2 Monate.",
-      "summary_en": "Rent-increase request sent. New net rent €920 from 1 Apr 2026; 2-month deadline for consent.",
-      "facts": [
+      "category": "legal.mietminderung",
+      "title": "Mietminderung 15% angekündigt",
+      "title_en": "Rent reduction 15% announced",
+      "summary": "Herr Carsten Austermühle hat eine Mietminderung um 15% angekündigt — Ursache: Wasserschaden + Schimmelbefall. Erst Mängel beheben, dann rechtliche Prüfung.",
+      "summary_en": "Herr Carsten Austermühle has announced a 15% rent reduction — root cause: water damage + mold. Fix the underlying issue before legal review.",
+      "root_causes": [
         {
-          "predicate": "mieterhoehung.neue_kaltmiete",
-          "value": "920.00",
-          "source_title": "03_mieterhoehung_we23",
-          "known_from": "2026-01-12T11:00:00.000Z",
-          "valid_from": "2026-04-01"
+          "type": "water_damage",
+          "score": 1,
+          "open_incident_count": 3
         },
         {
-          "predicate": "mieterhoehung.zustimmungsfrist",
-          "value": "2026-03-31",
-          "source_title": "03_mieterhoehung_we23",
-          "known_from": "2026-01-12T11:00:00.000Z"
+          "type": "mold",
+          "score": 1,
+          "open_incident_count": 2
+        }
+      ],
+      "facts": [
+        {
+          "predicate": "legal.mietminderung.prozent",
+          "value": "15",
+          "source_title": "Re: Mietminderung Ankuendigung",
+          "known_from": "2024-07-18T11:34:00.000Z",
+          "valid_from": null,
+          "valid_to": null
+        },
+        {
+          "predicate": "legal.mietminderung",
+          "value": "true",
+          "source_title": "Re: Mietminderung Ankuendigung",
+          "known_from": "2024-07-19T13:34:00.000Z",
+          "valid_from": null,
+          "valid_to": null
         }
       ],
       "email_chain": [
         {
-          "source_id": "sandbox:src:03_mieterhoehung_we23",
-          "title": "03_mieterhoehung_we23",
-          "from": "Huber & Partner Immobilienverwaltung",
-          "date": "2026-01-12T11:00:00.000Z",
-          "excerpt": "Sehr geehrte/r Mieter/in WE 23, hiermit verlangen wir gemäß §558 BGB Ihre Zustimmung zur Erhöhung der Kaltmiete auf €920,00 ab dem 01.04.2026. Bitte teilen Sie uns Ihre Zustimmung innerhalb von 2 Monaten schriftlich mit."
+          "source_id": "src_20240719-133400-email-01808-eml_027c65",
+          "title": "Re: Mietminderung Ankuendigung",
+          "from": "sabine.huber@huber-partner-verwaltung.de",
+          "date": "2024-07-19T13:34:00.000Z",
+          "excerpt": "Sehr geehrte/r Frau/Herr AustermÃ¼hle,\n\nbesten Dank fuer Ihre Nachricht, die wir zur Kenntnis genommen haben. Wir pruefen die Angelegenheit und kommen in Kuerze auf Sie zurueck.\n\nMit freundlichen Grue"
         }
       ],
       "actions": [
         {
+          "type": "draft_email",
+          "label": "Status update to Herr Carsten Austermühle",
+          "label_de": "Statusupdate an Herr Carsten Austermühle",
+          "recipient": {
+            "entity_id": "tenant:MIE-022",
+            "name": "Herr Carsten Austermühle",
+            "email": "carsten.austermuehle@web.de",
+            "role": "tenant"
+          },
+          "draft_context": {
+            "from": "Huber & Partner Immobilienverwaltung GmbH <info@huber-partner-verwaltung.de>",
+            "to": "Herr Carsten Austermühle",
+            "to_email": "carsten.austermuehle@web.de",
+            "subject": "Statusupdate: Mietminderung — Herr Carsten Austermühle",
+            "incident_summary": "Statusupdate an den Mieter: Erhalt der Mietminderungs-Ankündigung (15%) wegen Wasserschaden + Schimmelbefall bestätigt. Wir prüfen die nächsten Schritte und melden uns mit einem konkreten Reparaturtermin innerhalb der nächsten Werktage. Höflich, kein Eingeständnis von Verschulden.",
+            "entity_context": "Mieter: Herr Carsten Austermühle. Ankündigung: 15% Minderung. Wir haben bereits geantwortet — dies ist ein proaktives Statusupdate.",
+            "language": "de",
+            "tone": "formal"
+          }
+        },
+        {
+          "type": "dispatch_contractor",
+          "label": "Dispatch Sanitaer Schulze GmbH for water damage",
+          "label_de": "Sanitaer Schulze GmbH beauftragen — Wasserschaden",
+          "recipient": {
+            "entity_id": "contractor:DL-013",
+            "name": "Sanitaer Schulze GmbH",
+            "email": "ernst.august.jessel@sanitaer-schulze.de",
+            "role": "contractor"
+          },
+          "draft_context": {
+            "from": "Huber & Partner Immobilienverwaltung GmbH <info@huber-partner-verwaltung.de>",
+            "to": "Sanitaer Schulze GmbH",
+            "to_email": "ernst.august.jessel@sanitaer-schulze.de",
+            "subject": "Reparaturauftrag: Wasserschaden — Mietminderung anhängig",
+            "incident_summary": "Wasserschaden ist Ursache einer angekündigten Mietminderung. Sofortige Behebung erforderlich.",
+            "entity_context": "3 offene Vorgänge dieses Typs auf der Einheit.",
+            "language": "de",
+            "tone": "urgent"
+          }
+        },
+        {
+          "type": "dispatch_contractor",
+          "label": "Dispatch Sanitaer Schulze GmbH for mold",
+          "label_de": "Sanitaer Schulze GmbH beauftragen — Schimmelbefall",
+          "recipient": {
+            "entity_id": "contractor:DL-013",
+            "name": "Sanitaer Schulze GmbH",
+            "email": "ernst.august.jessel@sanitaer-schulze.de",
+            "role": "contractor"
+          },
+          "draft_context": {
+            "from": "Huber & Partner Immobilienverwaltung GmbH <info@huber-partner-verwaltung.de>",
+            "to": "Sanitaer Schulze GmbH",
+            "to_email": "ernst.august.jessel@sanitaer-schulze.de",
+            "subject": "Reparaturauftrag: Schimmelbefall — Mietminderung anhängig",
+            "incident_summary": "Schimmelbefall ist Ursache einer angekündigten Mietminderung. Sofortige Behebung erforderlich.",
+            "entity_context": "2 offene Vorgänge dieses Typs auf der Einheit.",
+            "language": "de",
+            "tone": "urgent"
+          }
+        },
+        {
+          "type": "escalate",
+          "label": "Legal review pending",
+          "label_de": "Rechtsprüfung läuft"
+        },
+        {
           "type": "follow_up",
-          "label": "Track tenant consent (deadline 31 Mar 2026)",
-          "label_de": "Mieterzustimmung verfolgen (Frist 31.03.2026)"
+          "label": "Follow up with Herr Carsten Austermühle if no reply",
+          "label_de": "Nachfassen bei Herr Carsten Austermühle wenn keine Antwort"
         }
       ],
-      "created_at": "2026-01-12T11:00:00.000Z"
+      "created_at": "2024-07-19T13:34:00.000Z",
+      "entity_reputation": {
+        "score": 0.78,
+        "band": "trusted",
+        "incidents_open": 7,
+        "incidents_total": 7,
+        "mahnung_count": 4,
+        "related_units": [
+          "unit:EH-031"
+        ]
+      }
     }
   ],
   "info_only": [
     {
-      "title": "01_etv_einladung",
-      "kind": "letter",
-      "summary": "Einladung zur Eigentümerversammlung — Tagesordnung ingested as facts on the WEG. No tenant action needed."
+      "title": "Schlüsselverlust report (Mitschke)",
+      "kind": "email",
+      "summary": "Tenant key-loss report — fact extracted (incident.type=lock_issue) but no critical action; folded into the open lock case."
     },
     {
-      "title": "05_bka_mitschke",
-      "kind": "letter",
-      "summary": "Betriebskostenabrechnung 2025 für Magrit Mitschke — added 18 nebenkosten facts to the tenant. No outstanding amount."
-    },
-    {
-      "title": "06_invoice_wasserbetriebe",
+      "title": "Quarterly water-utility invoice",
       "kind": "invoice",
-      "summary": "Berliner Wasserbetriebe quarterly invoice — €1.842,30. Booked against the WEG account, no manager action."
+      "summary": "Booked against the WEG account, no manager action — included so the comparison shows mixed-source ingestion."
     }
   ]
 }

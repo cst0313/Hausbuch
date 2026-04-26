@@ -8,6 +8,7 @@ import { UploadInspector, type IngestSummary } from "@/components/UploadInspecto
 import { AddEntityModal } from "@/components/AddEntityModal";
 import { CmdK } from "@/components/CmdK";
 import { StreamPanel, type StreamRec } from "@/components/StreamPanel";
+import { ContractorPicker, type Contractor } from "@/components/ContractorPanel";
 
 /**
  * Curated demo subset for the "Load sample bundle" button. These are
@@ -79,6 +80,15 @@ export default function SandboxPage() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [streamRec, setStreamRec] = useState<SandboxRec | null>(null);
   const [streamOpen, setStreamOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerTrade, setPickerTrade] = useState<string>("");
+  const [sentIds, setSentIds] = useState<Set<string>>(new Set());
+  const [resolvedIds, setResolvedIds] = useState<Set<string>>(new Set());
+  const [toast, setToast] = useState<string | null>(null);
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3500);
+  };
 
   // Hydrate sandbox state from sessionStorage on mount. Without this,
   // navigating to /context for an entity and clicking Back lands the
@@ -307,23 +317,103 @@ export default function SandboxPage() {
         open={streamOpen}
         onClose={closeStream}
         locale="en"
-        sent={false}
-        resolved={false}
-        onResolve={() => {}}
-        onSend={() => {}}
-        onDispatch={() => {}}
+        sent={streamRec ? sentIds.has(streamRec.id) : false}
+        resolved={streamRec ? resolvedIds.has(streamRec.id) : false}
+        onResolve={() => {
+          if (streamRec) {
+            setResolvedIds((s) => new Set([...s, streamRec.id]));
+            showToast("Marked resolved.");
+          }
+        }}
+        onSend={() => {
+          if (streamRec) {
+            setSentIds((s) => new Set([...s, streamRec.id]));
+            showToast("Reply sent.");
+          }
+        }}
+        onDispatch={() => {
+          // Open the contractor picker like the live dashboard does;
+          // category → trade map drives which trade is preselected.
+          const cat = streamRec?.category ?? "";
+          const trade =
+            cat.includes("water") ? "water_damage"
+              : cat.includes("heat") ? "heating"
+              : cat.includes("lock") || cat.includes("door") ? "lock_issue"
+              : cat.includes("mold") ? "mold"
+              : cat.includes("electrical") ? "electrical"
+              : "water_damage";
+          setPickerTrade(trade);
+          setPickerOpen(true);
+        }}
+      />
+
+      <ContractorPicker
+        open={pickerOpen}
+        trade={pickerTrade}
+        unit={streamRec?.entity_name}
+        onClose={() => setPickerOpen(false)}
+        onDispatch={(c: Contractor) => {
+          setPickerOpen(false);
+          const dispatchType =
+            streamRec?.category?.startsWith("incident.")
+              ? streamRec.category.replace(/^incident\./, "")
+              : pickerTrade || undefined;
+          fetch("/api/dispatch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              entity_id: streamRec?.entity_id ?? "weg:immanuelkirchstr-26",
+              contractor_id: c.id,
+              contractor_name: c.name,
+              incident_type: dispatchType,
+              note: `Manager dispatched ${c.name} for ${streamRec?.title ?? "open issue"} (reputation ${c.reputation.score.toFixed(2)} ${c.reputation.band}).`,
+            }),
+          })
+            .then(() => {
+              showToast(`Dispatched ${c.name}.`);
+              // Refresh recs so the dispatch fact is reflected in the
+              // next status-update draft + the case status.
+              void onIngested();
+            })
+            .catch(() => showToast("Dispatch failed — check the network tab."));
+        }}
       />
 
       <AddEntityModal
         open={addOpen}
         onClose={() => setAddOpen(false)}
-        onCreated={() => {
+        onCreated={(entityId) => {
           setAddOpen(false);
-          // After creating an entity manually, treat it as upload-mode
-          // so the user sees the new entity in the dashboard view.
+          // The user just manually created an entity — add its id to the
+          // sandbox-scoped set so any recs tied to it surface, then
+          // refetch + show a confirmation toast.
+          if (entityId) sandboxEntityIds.current.add(entityId);
+          showToast(`Added ${entityId}. Refreshing the queue…`);
           void onIngested();
         }}
       />
+
+      {toast && (
+        <div
+          role="status"
+          style={{
+            position: "fixed",
+            bottom: 24,
+            right: 24,
+            padding: "10px 16px",
+            background: "var(--bg-elevated)",
+            border: "1px solid var(--brand)",
+            borderRadius: 8,
+            color: "var(--fg)",
+            fontSize: 13,
+            boxShadow: "0 4px 24px rgba(0,0,0,0.15)",
+            zIndex: 100,
+            maxWidth: 360,
+          }}
+        >
+          {toast}
+        </div>
+      )}
     </>
   );
 }

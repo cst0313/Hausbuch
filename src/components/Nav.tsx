@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LocaleToggle } from "./LocaleToggle";
 import { useLocale } from "./LocaleProvider";
+import { HausbuchMark } from "./HausbuchMark";
 
 const PRIMARY = [
   { href: "/dashboard", key: "nav.dashboard" },
@@ -38,29 +39,17 @@ export function Nav({
     >
       <Link
         href="/"
+        aria-label="Hausbuch home"
         style={{
-          fontFamily: "var(--font-serif)",
-          fontStyle: "italic",
-          fontSize: 22,
-          letterSpacing: "-0.01em",
           color: "var(--fg)",
           textDecoration: "none",
-          display: "flex",
-          alignItems: "baseline",
-          gap: 8,
+          display: "inline-flex",
+          alignItems: "center",
         }}
       >
-        <span
-          style={{
-            width: 6,
-            height: 6,
-            borderRadius: "50%",
-            background: "var(--brand)",
-            display: "inline-block",
-            transform: "translateY(-2px)",
-          }}
-        />
-        Hausbuch
+        {/* Same roof-over-book mark used in the page footers, so the
+            top-left and bottom-left identities match. */}
+        <HausbuchMark size={20} />
       </Link>
 
       <nav style={{ display: "flex", gap: 4 }}>

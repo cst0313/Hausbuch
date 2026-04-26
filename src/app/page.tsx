@@ -7,6 +7,7 @@ import { Nav } from "@/components/Nav";
 import { useLocale } from "@/components/LocaleProvider";
 import { UploadInspector } from "@/components/UploadInspector";
 import { WhyThisWins } from "@/components/WhyThisWins";
+import { HausbuchMark } from "@/components/HausbuchMark";
 
 type LiveStats = {
   open: number;
@@ -262,8 +263,11 @@ export default function Home() {
       {/* Footer anchor */}
       <footer className="border-t" style={{ borderColor: "var(--border)" }}>
         <div className="max-w-5xl mx-auto px-6 py-10 flex items-center justify-between text-[12px] font-mono">
-          <span style={{ color: "var(--fg-dim)" }}>
-            Hausbuch · built in Berlin · April 2026
+          <span
+            style={{ color: "var(--fg-dim)", display: "inline-flex", alignItems: "center", gap: 12 }}
+          >
+            <HausbuchMark size={14} />
+            <span>· built in Berlin · April 2026</span>
           </span>
           <div className="flex items-center gap-5" style={{ color: "var(--fg-dim)" }}>
             <Link href="/research" className="hover:text-[color:var(--fg)] transition-colors">

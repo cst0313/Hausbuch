@@ -1094,13 +1094,25 @@ function extractEtvEinladung(text: string): ExtractedFact[] {
     }));
   }
 
-  // TOPs — capture them as a single concatenated agenda string
-  const tops = Array.from(text.matchAll(/TOP\s+\d+[:\s]+([^\n]+)/gi)).map((m) => m[1].trim());
-  if (tops.length > 0) {
-    facts.push(buildFact("etv.tagesordnung", tops.join(" · "), {
-      span: { start: 0, end: 30, quote: text.slice(0, 30) },
-      confidence: 0.92,
-    }));
+  // TOPs — capture them as a single concatenated agenda string AND
+  // capture a span that points at the actual agenda text (not the
+  // document letterhead). Earlier the span was hardcoded to text[0:30],
+  // which made the PDF-highlight view paint a rectangle over "Huber &
+  // Partner Immobilienverw…" at the top of the page instead of the
+  // mid-page agenda block where the TOPs live.
+  const topMatches = Array.from(text.matchAll(/TOP\s+\d+[:\s]+([^\n]+)/gi));
+  const tops = topMatches.map((m) => m[1].trim());
+  if (tops.length > 0 && topMatches[0]?.index !== undefined) {
+    const firstTop = topMatches[0];
+    const lastTop = topMatches[topMatches.length - 1];
+    const start = firstTop.index!;
+    const end = (lastTop.index ?? start) + lastTop[0].length;
+    facts.push(
+      buildFact("etv.tagesordnung", tops.join(" · "), {
+        span: { start, end, quote: text.slice(start, end) },
+        confidence: 0.92,
+      }),
+    );
   }
 
   return facts;

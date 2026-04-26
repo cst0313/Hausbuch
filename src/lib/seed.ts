@@ -169,6 +169,7 @@ export function seedIfEmpty(database: Database.Database): void {
   // Bulk imports run outside the main transaction (they're large)
   importEmails(data);
   importBankTransactions();
+  importBankStatement();
   importPdfs(data);
 
   // Re-enable derived-cache invalidation now that bulk writes are done.
@@ -732,6 +733,130 @@ function importBankTransactions(): void {
     }
   }
   console.log(`[hausbuch] imported ${count} bank transactions`);
+}
+
+/**
+ * Load the CAMT.053 bank statement document so the WEG's Context.md
+ * actually shows the statement that the per-transaction TX-NNNNN sources
+ * came from. Writes:
+ *   - one Source row (kind=bank) attached to the WEG with the full XML
+ *     stored as raw_excerpt (truncated to a few KB)
+ *   - financial.iban (the WEG's account)
+ *   - financial.opening_balance + valid_from = statement-start date
+ *   - financial.closing_balance + valid_from = statement-end date
+ *   - financial.statement_period
+ *
+ * Cheap regex parse of the XML — we only need a handful of leaf nodes
+ * (IBAN, two Bal blocks with OPBD/CLBD type codes, FrToDt FrDt/ToDt) and
+ * pulling in a full XML library for that would be overkill.
+ */
+function importBankStatement(): void {
+  const xmlPath = path.join(HACKATHON_DIR, "bank", "kontoauszug_2024_2025.camt053.xml");
+  if (!fs.existsSync(xmlPath)) {
+    console.log("[hausbuch] no bank statement XML found");
+    return;
+  }
+  const xml = fs.readFileSync(xmlPath, "utf8");
+
+  // IBAN of the account the statement is for (first IBAN under <Acct>).
+  const ibanMatch = xml.match(/<Acct>[\s\S]*?<IBAN>([^<]+)<\/IBAN>/);
+  const iban = ibanMatch?.[1]?.trim();
+
+  // OPBD = opening booked balance, CLBD = closing booked balance. Each
+  // <Bal> block wraps a Tp/CdOrPrtry/Cd, an Amt Ccy="EUR", AND a date
+  // expressed as <Dt><Dt>YYYY-MM-DD</Dt></Dt>. We pull all three so the
+  // statement period can be derived from the OPBD/CLBD dates (the file
+  // doesn't carry an explicit FrToDt block).
+  const balRegex = /<Bal>[\s\S]*?<Tp>[\s\S]*?<Cd>(OPBD|CLBD)<\/Cd>[\s\S]*?<Amt[^>]*>([^<]+)<\/Amt>[\s\S]*?<Dt>\s*<Dt>([^<]+)<\/Dt>\s*<\/Dt>[\s\S]*?<\/Bal>/g;
+  let opening: number | null = null;
+  let closing: number | null = null;
+  let openingDate: string | undefined;
+  let closingDate: string | undefined;
+  let m: RegExpExecArray | null;
+  while ((m = balRegex.exec(xml)) !== null) {
+    const code = m[1];
+    const amt = Number(m[2]);
+    const dt = m[3]?.slice(0, 10);
+    if (code === "OPBD" && opening === null) {
+      opening = amt;
+      openingDate = dt;
+    }
+    if (code === "CLBD") {
+      closing = amt;
+      closingDate = dt;
+    }
+  }
+  const periodFrom = openingDate;
+  const periodTo = closingDate;
+
+  const now = new Date().toISOString();
+  const sourceId = "src:bank-statement:2024-2025";
+  const title = "Kontoauszug 2024–2025 (CAMT.053)";
+  const summary = [
+    iban ? `IBAN: ${iban}` : null,
+    periodFrom && periodTo ? `Period: ${periodFrom} → ${periodTo}` : null,
+    opening != null ? `Opening balance: €${opening.toFixed(2)}` : null,
+    closing != null ? `Closing balance: €${closing.toFixed(2)}` : null,
+    "Bank statement document (ISO 20022 CAMT.053).",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  try {
+    insertSource({
+      id: sourceId,
+      kind: "bank",
+      title,
+      ingested_at: now,
+      raw_excerpt: summary,
+      source_prior: 0.98, // highly trusted — primary bank document
+      entity_id: ENTITY,
+      category: "kontoauszug",
+    });
+  } catch {
+    // already inserted, skip
+  }
+
+  if (iban) writeFact(ENTITY, "financial.iban", iban, sourceId, iban, now);
+  if (periodFrom && periodTo) {
+    writeFact(
+      ENTITY,
+      "financial.statement_period",
+      `${periodFrom} → ${periodTo}`,
+      sourceId,
+      `Kontoauszug ${periodFrom} → ${periodTo}`,
+      now,
+      undefined,
+      periodFrom,
+    );
+  }
+  if (opening != null && periodFrom) {
+    writeFact(
+      ENTITY,
+      "financial.opening_balance",
+      opening,
+      sourceId,
+      `€${opening.toFixed(2)}`,
+      now,
+      "EUR",
+      periodFrom,
+    );
+  }
+  if (closing != null && periodTo) {
+    writeFact(
+      ENTITY,
+      "financial.closing_balance",
+      closing,
+      sourceId,
+      `€${closing.toFixed(2)}`,
+      now,
+      "EUR",
+      periodTo,
+    );
+  }
+  console.log(
+    `[hausbuch] imported bank statement · IBAN ${iban ?? "—"} · ${periodFrom ?? "?"}→${periodTo ?? "?"} · €${opening ?? "?"} → €${closing ?? "?"}`,
+  );
 }
 
 // ── PDF import (briefe + rechnungen + incremental letters) ──────────────────

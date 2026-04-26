@@ -209,6 +209,8 @@ export function FactProvenanceDrawer({ fact, source, onClose }: Props) {
                         onSelect={navigate}
                       />
                     </>
+                  ) : displaySource.kind === "bank" ? (
+                    <BankStatementPreview source={displaySource} fact={fact} />
                   ) : (
                     <ExtractionPreview source={displaySource} fact={fact} />
                   )}
@@ -581,6 +583,202 @@ function ThreadView({
       </ol>
     </div>
   );
+}
+
+/**
+ * Bank-statement preview. For bank-transaction sources (id like
+ * "src:bank:TX-00123") fetch the corresponding row from the live
+ * Sparkasse-format kontoauszug CSV plus ±5 surrounding rows, then
+ * render them as a small spreadsheet with the focus row highlighted
+ * in brand color. So a citation like ^[↓ Miete 01/2024 EH-045] now
+ * resolves visually to the actual line in the statement document
+ * (with the rows above and below for context).
+ *
+ * Falls back to the text ExtractionPreview if the statement isn't on
+ * disk or this source isn't tied to a TX reference.
+ */
+function BankStatementPreview({
+  source,
+  fact,
+}: {
+  source: Source;
+  fact: Fact;
+}) {
+  type Row = {
+    date: string;
+    buchungstext: string;
+    verwendungszweck: string;
+    kundenreferenz: string;
+    beguenstigter: string;
+    iban: string;
+    betrag: string;
+    saldo: string;
+    lineno: number;
+    isFocus: boolean;
+  };
+  type Payload = {
+    tx: string;
+    statement: { file: string; total_rows: number; window: { start: number; end: number; focus: number } };
+    rows: Row[];
+  };
+  const [data, setData] = useState<Payload | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/source/${encodeURIComponent(source.id)}/statement`)
+      .then(async (r) => {
+        if (!r.ok) {
+          const j = await r.json().catch(() => ({}));
+          throw new Error(j?.error ?? `HTTP ${r.status}`);
+        }
+        return r.json();
+      })
+      .then((d: Payload) => {
+        if (!cancelled) setData(d);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(String(e?.message ?? e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [source.id]);
+
+  if (error) {
+    return (
+      <>
+        <div
+          className="text-[11px] font-mono mb-2"
+          style={{ color: "var(--fg-dim)" }}
+        >
+          Statement document unavailable ({error}) — showing extracted text instead
+        </div>
+        <ExtractionPreview source={source} fact={fact} />
+      </>
+    );
+  }
+  if (!data) {
+    return (
+      <div
+        className="rounded-md p-3 text-[12px]"
+        style={{
+          background: "var(--bg)",
+          border: "1px solid var(--border-muted)",
+          color: "var(--fg-dim)",
+        }}
+      >
+        loading bank statement…
+      </div>
+    );
+  }
+  return (
+    <div
+      style={{
+        border: "1px solid var(--border-muted)",
+        borderRadius: 8,
+        overflow: "hidden",
+        background: "var(--bg)",
+      }}
+    >
+      <div
+        className="text-[10px] font-mono uppercase tracking-wider px-3 py-2"
+        style={{
+          color: "var(--fg-dim)",
+          background: "var(--bg-elevated)",
+          borderBottom: "1px solid var(--border-muted)",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "baseline",
+        }}
+      >
+        <span>{data.statement.file}</span>
+        <span>
+          {data.tx} · row {data.statement.window.focus + 1} of {data.statement.total_rows}
+        </span>
+      </div>
+      <div style={{ overflowX: "auto", maxHeight: 360 }}>
+        <table
+          style={{
+            width: "100%",
+            borderCollapse: "collapse",
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+          }}
+        >
+          <thead>
+            <tr
+              style={{
+                background: "var(--bg-elevated)",
+                color: "var(--fg-dim)",
+                textTransform: "uppercase",
+                letterSpacing: "0.06em",
+              }}
+            >
+              <th style={th()}>#</th>
+              <th style={th()}>Datum</th>
+              <th style={th()}>Buchungstext</th>
+              <th style={th()}>Verwendungszweck</th>
+              <th style={th()}>Begünstigter</th>
+              <th style={{ ...th(), textAlign: "right" }}>Betrag</th>
+              <th style={{ ...th(), textAlign: "right" }}>Saldo</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.rows.map((r) => (
+              <tr
+                key={r.lineno}
+                style={{
+                  background: r.isFocus
+                    ? "color-mix(in srgb, var(--brand) 22%, transparent)"
+                    : "transparent",
+                  borderTop: "1px solid var(--border-muted)",
+                  color: r.isFocus ? "var(--fg)" : "var(--fg-muted)",
+                  outline: r.isFocus
+                    ? "1px solid color-mix(in srgb, var(--brand) 70%, transparent)"
+                    : "none",
+                }}
+                title={
+                  r.isFocus
+                    ? `Source row for ${data.tx} (kundenreferenz=${r.kundenreferenz})`
+                    : undefined
+                }
+              >
+                <td style={td()}>{r.lineno}</td>
+                <td style={td()}>{r.date}</td>
+                <td style={td()}>{r.buchungstext}</td>
+                <td style={{ ...td(), maxWidth: 220, whiteSpace: "normal" }}>
+                  {r.verwendungszweck}
+                </td>
+                <td style={td()}>{r.beguenstigter}</td>
+                <td style={{ ...td(), textAlign: "right" }}>{r.betrag}</td>
+                <td style={{ ...td(), textAlign: "right" }}>{r.saldo}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function th(): React.CSSProperties {
+  return {
+    textAlign: "left",
+    padding: "6px 10px",
+    fontSize: 10,
+    fontWeight: 500,
+    borderBottom: "1px solid var(--border-muted)",
+    whiteSpace: "nowrap",
+  };
+}
+
+function td(): React.CSSProperties {
+  return {
+    padding: "6px 10px",
+    whiteSpace: "nowrap",
+    fontFeatureSettings: '"tnum"',
+  };
 }
 
 function ConfidenceBar({ value }: { value: number }) {

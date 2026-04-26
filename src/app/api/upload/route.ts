@@ -1,6 +1,6 @@
 // path: src/app/api/upload/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { db, getEntity } from "@/lib/db";
 import { ingest } from "@/lib/ingest";
 import type { SourceKind } from "@/lib/types";
 import { extractFromImage, GeminiError } from "@/lib/llm/gemini";
@@ -153,7 +153,37 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ uploaded: results });
+  // Top-level summary so the sandbox's onIngested hook (and any other
+  // UploadInspector consumer) can update its counters and entity set
+  // without re-deriving from `uploaded[]`. Mirrors /api/upload-bulk.
+  const factsAdded = results.reduce((n, r) => n + (r.facts ?? 0), 0);
+  const entityCounts = new Map<string, number>();
+  for (const r of results) {
+    if (r.fact_details) {
+      for (const fd of r.fact_details) {
+        if (fd.entity) {
+          entityCounts.set(fd.entity, (entityCounts.get(fd.entity) ?? 0) + 1);
+        }
+      }
+    }
+  }
+  const entitiesChanged = [...entityCounts.entries()].map(([id, count]) => {
+    const e = getEntity(id);
+    return {
+      id,
+      name: e?.name ?? id,
+      type: e?.type ?? id.split(":")[0] ?? "unknown",
+      fact_count: count,
+    };
+  });
+
+  return NextResponse.json({
+    uploaded: results,
+    files_total: files.length,
+    files_processed: results.filter((r) => !("error" in r) || !r.error).length,
+    facts_added: factsAdded,
+    entities_changed: entitiesChanged,
+  });
 }
 
 type ExtractResult = { text: string; kind: SourceKind; extractor: string };

@@ -22,6 +22,31 @@ export function FactProvenanceDrawer({ fact, source, onClose }: Props) {
     return () => window.removeEventListener("keydown", handler);
   }, [fact, onClose]);
 
+  // The source the drawer is *currently displaying*. Defaults to the source
+  // the fact was extracted from; clicking a sibling in the thread overrides
+  // it to that one. The fact itself never changes — we still highlight the
+  // fact's quote inside whichever source is on screen.
+  const [viewedSource, setViewedSource] = useState<Source | null>(null);
+  // Reset to the original source whenever the parent opens the drawer for
+  // a different fact.
+  useEffect(() => {
+    setViewedSource(null);
+  }, [fact?.id, source?.id]);
+
+  const navigate = (sourceId: string) => {
+    if (sourceId === source?.id) {
+      setViewedSource(null);
+      return;
+    }
+    fetch(`/api/source/${encodeURIComponent(sourceId)}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((d: { source: Source }) => setViewedSource(d.source))
+      .catch(() => {});
+  };
+
+  const displaySource = viewedSource ?? source;
+  const isOnOriginal = !viewedSource;
+
   const open = fact !== null;
 
   return (
@@ -130,19 +155,38 @@ export function FactProvenanceDrawer({ fact, source, onClose }: Props) {
               >
                 source
               </p>
-              {source ? (
+              {displaySource ? (
                 <>
-                  <p
-                    className="text-[14px] font-medium mb-1"
-                    style={{ color: "var(--fg)" }}
-                  >
-                    {source.title}
-                  </p>
+                  <div className="flex items-center justify-between gap-3 mb-1">
+                    <p
+                      className="text-[14px] font-medium"
+                      style={{ color: "var(--fg)" }}
+                    >
+                      {displaySource.title}
+                    </p>
+                    {!isOnOriginal && source && (
+                      <button
+                        type="button"
+                        onClick={() => setViewedSource(null)}
+                        className="font-mono text-[10px] px-2 py-0.5 rounded transition-colors hover:opacity-80"
+                        style={{
+                          color: "var(--brand)",
+                          background: "var(--brand-wash)",
+                          border: "1px solid var(--brand)",
+                          cursor: "pointer",
+                        }}
+                        title="Back to the source the fact was extracted from"
+                      >
+                        ← back to fact source
+                      </button>
+                    )}
+                  </div>
                   <p
                     className="text-[11px] font-mono mb-4"
                     style={{ color: "var(--fg-dim)" }}
                   >
-                    {source.kind} · ingested {source.ingested_at}
+                    {displaySource.kind} · ingested {displaySource.ingested_at}
+                    {!isOnOriginal && source && ` · viewing thread sibling of ${source.title}`}
                   </p>
                   {/*
                     Source preview. Three render paths:
@@ -155,24 +199,27 @@ export function FactProvenanceDrawer({ fact, source, onClose }: Props) {
                       • Anything else (note, bank, stammdaten) → just the
                         text-based ExtractionPreview.
                   */}
-                  {(["letter", "invoice", "pdf"].includes(source.kind)) ? (
-                    <PdfSourcePreview source={source} fact={fact} />
-                  ) : source.kind === "email" ? (
+                  {(["letter", "invoice", "pdf"].includes(displaySource.kind)) ? (
+                    <PdfSourcePreview source={displaySource} fact={fact} />
+                  ) : displaySource.kind === "email" ? (
                     <>
-                      <ExtractionPreview source={source} fact={fact} />
-                      <ThreadView sourceId={source.id} />
+                      <ExtractionPreview source={displaySource} fact={fact} />
+                      <ThreadView
+                        sourceId={displaySource.id}
+                        onSelect={navigate}
+                      />
                     </>
                   ) : (
-                    <ExtractionPreview source={source} fact={fact} />
+                    <ExtractionPreview source={displaySource} fact={fact} />
                   )}
 
-                  {fact.span && (
+                  {fact.span && isOnOriginal && (
                     <div
                       className="mt-3 text-[11px] font-mono"
                       style={{ color: "var(--fg-dim)" }}
                     >
                       span [{fact.span.start}:{fact.span.end}] · source_prior{" "}
-                      {source.source_prior.toFixed(2)}
+                      {displaySource.source_prior.toFixed(2)}
                     </div>
                   )}
                 </>
@@ -397,11 +444,18 @@ function PdfSourcePreview({ source, fact }: { source: Source; fact: Fact }) {
 
 /**
  * Render the rest of the email thread the source belongs to. Each row
- * shows the timestamp, direction (incoming / outgoing), subject, and
- * a short excerpt; clicking would open that source's drawer in a future
- * pass — for now it's read-only context for the manager.
+ * shows the timestamp, direction (incoming / outgoing), subject, and a
+ * short excerpt. Clicking a row navigates the drawer to that source —
+ * the same fact stays "the fact under investigation", we just show it
+ * inside a different message in the same thread.
  */
-function ThreadView({ sourceId }: { sourceId: string }) {
+function ThreadView({
+  sourceId,
+  onSelect,
+}: {
+  sourceId: string;
+  onSelect: (id: string) => void;
+}) {
   type ThreadEntry = {
     id: string;
     title: string;
@@ -445,45 +499,82 @@ function ThreadView({ sourceId }: { sourceId: string }) {
           const isCurrent = m.id === sourceId;
           const isOutgoing = m.direction === "outgoing";
           return (
-            <li
-              key={m.id}
-              className="rounded-md p-2.5 text-[12px]"
-              style={{
-                background: isCurrent ? "color-mix(in srgb, var(--brand) 12%, transparent)" : "var(--bg)",
-                border: `1px solid ${isCurrent ? "var(--brand)" : "var(--border-muted)"}`,
-                color: "var(--fg-muted)",
-              }}
-            >
-              <div className="flex items-center gap-2 mb-1">
-                <span
-                  className="font-mono text-[10px]"
-                  style={{
-                    color: isOutgoing ? "var(--brand)" : "var(--fg-muted)",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
-                  }}
-                >
-                  {isOutgoing ? "→ outgoing" : "← incoming"}
-                </span>
-                <span className="font-mono text-[10px]" style={{ color: "var(--fg-dim)" }}>
-                  {m.ingested_at.slice(0, 10)}
-                </span>
-                {isCurrent && (
+            <li key={m.id} style={{ listStyle: "none", margin: 0, padding: 0 }}>
+              <button
+                type="button"
+                onClick={() => onSelect(m.id)}
+                className="w-full text-left rounded-md p-2.5 text-[12px] transition-colors"
+                style={{
+                  background: isCurrent
+                    ? "color-mix(in srgb, var(--brand) 12%, transparent)"
+                    : "var(--bg)",
+                  border: `1px solid ${isCurrent ? "var(--brand)" : "var(--border-muted)"}`,
+                  color: "var(--fg-muted)",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  display: "block",
+                }}
+                onMouseEnter={(e) => {
+                  if (!isCurrent) {
+                    e.currentTarget.style.background = "var(--bg-hover)";
+                    e.currentTarget.style.borderColor = "var(--border)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isCurrent) {
+                    e.currentTarget.style.background = "var(--bg)";
+                    e.currentTarget.style.borderColor = "var(--border-muted)";
+                  }
+                }}
+                aria-label={`Open ${m.title}`}
+              >
+                <div className="flex items-center gap-2 mb-1">
                   <span
-                    className="font-mono text-[9px] px-1.5 py-0.5 rounded"
-                    style={{ background: "var(--brand)", color: "white", letterSpacing: "0.04em" }}
+                    className="font-mono text-[10px]"
+                    style={{
+                      color: isOutgoing ? "var(--brand)" : "var(--fg-muted)",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.06em",
+                    }}
                   >
-                    THIS
+                    {isOutgoing ? "→ outgoing" : "← incoming"}
                   </span>
-                )}
-              </div>
-              <div style={{ color: "var(--fg)", fontWeight: 500, marginBottom: 4 }}>
-                {m.title}
-              </div>
-              <div style={{ fontSize: 11.5, lineHeight: 1.45 }}>
-                {m.excerpt.replace(/\s+/g, " ")}
-                {m.excerpt.length >= 240 ? "…" : ""}
-              </div>
+                  <span
+                    className="font-mono text-[10px]"
+                    style={{ color: "var(--fg-dim)" }}
+                  >
+                    {m.ingested_at.slice(0, 10)}
+                  </span>
+                  {isCurrent ? (
+                    <span
+                      className="font-mono text-[9px] px-1.5 py-0.5 rounded"
+                      style={{
+                        background: "var(--brand)",
+                        color: "white",
+                        letterSpacing: "0.04em",
+                      }}
+                    >
+                      THIS
+                    </span>
+                  ) : (
+                    <span
+                      className="font-mono text-[9px] ml-auto"
+                      style={{ color: "var(--fg-dim)" }}
+                    >
+                      open →
+                    </span>
+                  )}
+                </div>
+                <div
+                  style={{ color: "var(--fg)", fontWeight: 500, marginBottom: 4 }}
+                >
+                  {m.title}
+                </div>
+                <div style={{ fontSize: 11.5, lineHeight: 1.45 }}>
+                  {m.excerpt.replace(/\s+/g, " ")}
+                  {m.excerpt.length >= 240 ? "…" : ""}
+                </div>
+              </button>
             </li>
           );
         })}

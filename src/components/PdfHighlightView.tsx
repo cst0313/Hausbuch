@@ -39,6 +39,54 @@ const PDFJS_BASE = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSIO
 
 let pdfJsPromise: Promise<PdfJs> | null = null;
 
+type LineItem = { str: string; x: number; y: number; w: number; h: number };
+
+/**
+ * Given a line's items and its concatenated text, return the subset of
+ * items that cover the quote. Walks the items left-to-right, accumulating
+ * their joined text and stopping when the running concatenation contains
+ * the quote (so a tight rectangle covers exactly the matched stretch
+ * rather than the whole line).
+ */
+function pickLineItemsForSubstring(
+  items: LineItem[],
+  lineText: string,
+  quote: string,
+): LineItem[] {
+  // Locate the quote inside lineText.
+  const qStart = lineText.indexOf(quote);
+  if (qStart < 0) return [];
+  const qEnd = qStart + quote.length;
+  // Replay the join-with-space concatenation, mapping char-positions back
+  // to item indices.
+  let pos = 0;
+  const picked: LineItem[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const start = pos;
+    const end = pos + items[i].str.length;
+    if (start < qEnd && end > qStart) picked.push(items[i]);
+    pos = end + 1; // +1 for the joining space
+  }
+  return picked;
+}
+
+function makeRect(
+  its: LineItem[],
+  quote: string,
+): { quote: string; x: number; y: number; w: number; h: number } {
+  const minX = Math.min(...its.map((i) => i.x));
+  const maxX = Math.max(...its.map((i) => i.x + i.w));
+  const minY = Math.min(...its.map((i) => i.y));
+  const maxY = Math.max(...its.map((i) => i.y + i.h));
+  return {
+    quote,
+    x: minX - 1,
+    y: minY - 1,
+    w: maxX - minX + 2,
+    h: maxY - minY + 2,
+  };
+}
+
 function loadPdfJs(): Promise<PdfJs> {
   if (typeof window === "undefined") return Promise.reject(new Error("ssr"));
   const w = window as unknown as { pdfjsLib?: PdfJs };
@@ -131,12 +179,16 @@ export function PdfHighlightView({
           if (!ctx) continue;
           await page.render({ canvasContext: ctx, viewport, canvas }).promise;
 
-          // Build the text buffer + position map for highlight matching.
+          // Build per-item geometry. Crucially we DON'T concatenate items
+          // into one big buffer for substring matching — pdf.js returns
+          // items in PDF content-stream order, which for tabular layouts
+          // interleaves label-column and number-column items. A blind
+          // indexOf on that buffer found "Anteil Gesamtkosten: 5.159,98"
+          // partially in some unrelated row and highlighted the wrong
+          // rectangle. Group by visual line first, then match per line.
           const textContent = await page.getTextContent();
-          let buffer = "";
           type ItemPos = {
-            start: number;
-            end: number;
+            str: string;
             x: number;
             y: number;
             w: number;
@@ -144,7 +196,6 @@ export function PdfHighlightView({
           };
           const items: ItemPos[] = [];
           for (const it of textContent.items) {
-            // pdfjs Item has str, transform [a,b,c,d,e,f], width, height
             const item = it as {
               str: string;
               transform: number[];
@@ -154,65 +205,69 @@ export function PdfHighlightView({
             const str = item.str;
             if (!str) continue;
             const [a, , , d, e, f] = item.transform;
-            // Transform to viewport coords. pdf.js's viewport.transform
-            // accounts for scale + flipped Y. Easier path: use the raw
-            // transform and apply the viewport matrix manually.
             const [vx, vy] = viewport.convertToViewportPoint(e, f);
             const w = (item.width || str.length * Math.abs(a)) * viewport.scale;
             const h = (item.height || Math.abs(d)) * viewport.scale;
-            const start = buffer.length;
-            buffer += str + " ";
-            items.push({
-              start,
-              end: start + str.length,
-              x: vx,
-              y: vy - h,
-              w,
-              h,
-            });
+            items.push({ str, x: vx, y: vy - h, w, h });
           }
 
-          // Match each quote and compute its rect.
+          // Bucket items by visual line (y-coordinate), then within each
+          // line sort left-to-right (x). This recovers reading order from
+          // the unordered content-stream items.
+          const lineMap = new Map<number, ItemPos[]>();
+          for (const it of items) {
+            const key = Math.round(it.y / 4) * 4; // 4px y-bucket — tight enough to keep rows apart in dense tables
+            const list = lineMap.get(key) ?? [];
+            list.push(it);
+            lineMap.set(key, list);
+          }
+          const lines: Array<{ y: number; items: ItemPos[]; text: string }> = [];
+          for (const [y, list] of lineMap) {
+            list.sort((a, b) => a.x - b.x);
+            // Concatenate items with single spaces; the per-line search
+            // only needs to match a quote that fits on one line.
+            const text = list.map((i) => i.str).join(" ").replace(/\s+/g, " ");
+            lines.push({ y, items: list, text });
+          }
+          // Sort lines top-to-bottom for deterministic match order.
+          lines.sort((a, b) => a.y - b.y);
+
           const rects: typeof renderedPages[0]["rects"] = [];
           const seenQuotes = new Set<string>();
           for (const span of spans) {
             const q = (span.quote ?? "").trim();
             if (!q || q.length < 3 || seenQuotes.has(q)) continue;
-            // Normalize whitespace for matching (PDF text often joins lines).
-            const normBuf = buffer.replace(/\s+/g, " ");
             const normQ = q.replace(/\s+/g, " ");
-            const idx = normBuf.indexOf(normQ);
-            if (idx < 0) continue;
-            seenQuotes.add(q);
 
-            // Find the items overlapping [idx, idx+normQ.length) in the
-            // ORIGINAL buffer (which has the same length as normBuf for the
-            // ASCII-portion; using normBuf is good enough for our matches).
-            const end = idx + normQ.length;
-            const overlapping = items.filter((it) => it.start < end && it.end > idx);
-            if (overlapping.length === 0) continue;
-            // Group overlapping items by line (similar y) so multi-line quotes
-            // emit one rect per line, not one giant box.
-            const lines = new Map<number, ItemPos[]>();
-            for (const it of overlapping) {
-              const key = Math.round(it.y / 5) * 5; // 5px y-bucket
-              const list = lines.get(key) ?? [];
-              list.push(it);
-              lines.set(key, list);
+            // Try each visual line. A single quote may span multiple lines —
+            // when it doesn't fit one line, we walk consecutive lines and
+            // accept the longest contiguous run of lines whose joined text
+            // contains the quote.
+            let matched = false;
+            for (let i = 0; i < lines.length && !matched; i++) {
+              // 1. Single-line match.
+              if (lines[i].text.includes(normQ)) {
+                const its = pickLineItemsForSubstring(lines[i].items, lines[i].text, normQ);
+                if (its.length > 0) {
+                  rects.push(makeRect(its, q));
+                  matched = true;
+                  break;
+                }
+              }
+              // 2. Multi-line match — try joining up to 4 consecutive lines.
+              for (let j = i + 1; j < Math.min(lines.length, i + 4); j++) {
+                const joined = lines.slice(i, j + 1).map((l) => l.text).join(" ");
+                if (joined.includes(normQ)) {
+                  // Highlight every line in the run; cheap and unambiguous.
+                  for (let k = i; k <= j; k++) {
+                    rects.push(makeRect(lines[k].items, q));
+                  }
+                  matched = true;
+                  break;
+                }
+              }
             }
-            for (const [, lineItems] of lines) {
-              const minX = Math.min(...lineItems.map((it) => it.x));
-              const maxX = Math.max(...lineItems.map((it) => it.x + it.w));
-              const minY = Math.min(...lineItems.map((it) => it.y));
-              const maxY = Math.max(...lineItems.map((it) => it.y + it.h));
-              rects.push({
-                quote: q,
-                x: minX - 1,
-                y: minY - 1,
-                w: maxX - minX + 2,
-                h: maxY - minY + 2,
-              });
-            }
+            if (matched) seenQuotes.add(q);
           }
 
           renderedPages.push({

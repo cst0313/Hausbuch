@@ -40,6 +40,50 @@ type PendingClassification = {
 };
 const pendingClassifications: PendingClassification[] = [];
 
+/**
+ * Body-hash dedup index. The synthetic hackathon dataset reuses the same
+ * tenant-email body across multiple timestamps — Louise Ladeck has 4
+ * identical "Wasserschaden Bad" emails over 2 months, 3 of them within
+ * 3 days of each other; same pattern across the corpus. The first
+ * occurrence is real; the next ones inside the same window are template
+ * noise.
+ *
+ * Rule: same (entity, body-hash) within DEDUP_WINDOW_DAYS → drop the
+ * later one. Wider intervals are kept because a tenant genuinely
+ * re-reporting an unresolved issue 2 months later IS signal we want.
+ */
+const emailBodyIndex = new Map<string, number[]>(); // key=entity|hash → epoch-ms list
+const DEDUP_WINDOW_DAYS = 14;
+const DEDUP_WINDOW_MS = DEDUP_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+
+// djb2 — short, non-cryptographic, deterministic. Same body always yields
+// the same key; we only need collision-resistance within one entity.
+function bodyHash(body: string): string {
+  const normalized = body.replace(/\s+/g, " ").trim().slice(0, 2048);
+  let h = 5381;
+  for (let i = 0; i < normalized.length; i++) {
+    h = ((h << 5) + h + normalized.charCodeAt(i)) | 0;
+  }
+  return (h >>> 0).toString(36);
+}
+
+function isDuplicateBody(entityId: string, body: string, atIso: string): boolean {
+  if (!body || body.length < 40) return false; // empty / one-liner — too short to dedupe reliably
+  const key = `${entityId}|${bodyHash(body)}`;
+  const ts = Date.parse(atIso);
+  if (!Number.isFinite(ts)) return false;
+  const seen = emailBodyIndex.get(key);
+  if (!seen) {
+    emailBodyIndex.set(key, [ts]);
+    return false;
+  }
+  for (const prev of seen) {
+    if (Math.abs(prev - ts) <= DEDUP_WINDOW_MS) return true;
+  }
+  seen.push(ts);
+  return false;
+}
+
 // ── Default entity for backwards compat ─────────────────────────────────────
 
 export const ENTITY = "weg:immanuelkirchstr-26";
@@ -487,13 +531,23 @@ function importSingleEmail(
     const direction = meta?.direction ?? (fromAddr.includes("huber-partner") ? "outgoing" : "incoming");
     const relevantAddr = direction === "incoming" ? fromAddr : toAddr;
     const entityId = emailToEntity.get(relevantAddr) ?? ENTITY;
+    const ingestedAt = headers.date || new Date().toISOString();
+
+    // Drop duplicate-body emails inside a 14-day window — the dataset reuses
+    // template bodies (Louise Ladeck had 4 identical Wasserschaden emails in
+    // a single fortnight). Keeping all of them inflated the email_chain on
+    // her water-damage rec to 4 lines that read identically. The first
+    // occurrence is kept; later identical bodies are silently skipped.
+    if (isDuplicateBody(entityId, body, ingestedAt)) {
+      return;
+    }
 
     const sourceId = newSourceId(filename);
     const source: Source = {
       id: sourceId,
       kind: "email",
       title: headers.subject || filename,
-      ingested_at: headers.date || new Date().toISOString(),
+      ingested_at: ingestedAt,
       raw_excerpt: body.slice(0, 4096),
       source_prior: 0.7,
       entity_id: entityId,

@@ -317,6 +317,14 @@ export default function ResearchPage() {
                   "Both are reset-and-re-run ready, so a regression shows up in one minute.",
                 ],
               },
+              {
+                title: "Body-hash dedup for synthetic email duplicates",
+                bullets: [
+                  "Discovered Louise Ladeck's water-damage thread had 4 byte-identical emails (Sept + 3 within 3 days in Nov).",
+                  "Pattern is dataset-wide: the corpus generator reuses ~30 template bodies across timestamps.",
+                  "Fix: djb2-hash the normalized body, suppress duplicates within (entity, 14-day window). Wider intervals kept — a tenant re-reporting unresolved leak after 7 weeks IS real signal.",
+                ],
+              },
             ].map((c) => (
               <div
                 key={c.title}
@@ -484,7 +492,7 @@ export default function ResearchPage() {
                   {
                     pass: "2 · agent",
                     change: "Agent uses d=1 for secondary entities",
-                    before: "&quot;What's broken in WE 32?&quot; 2,618 ms p50",
+                    before: '"What\'s broken in WE 32?" 2,618 ms p50',
                     after: "919 ms p50 (−65%)",
                     why: "When the query loads 3 entities (unit + tenant + owner), the secondary two used to render at d=2 (12K tokens each) — now d=1 (~400 tokens). Pure prompt-size reduction, no behavior change.",
                   },
@@ -528,6 +536,97 @@ export default function ResearchPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </section>
+
+        {/* Dataset findings — quirks of the synthetic corpus we caught and corrected */}
+        <section className="max-w-6xl mx-auto px-6 py-16">
+          <div
+            className="text-[11px] font-mono tracking-widest uppercase mb-6"
+            style={{ color: "var(--ink-dim)" }}
+          >
+            / dataset findings
+          </div>
+          <h2 className="font-serif text-3xl md:text-4xl mb-6 leading-tight">
+            How we{" "}
+            <span className="italic" style={{ color: "var(--amber-bright)" }}>
+              dealt with
+            </span>{" "}
+            the data.
+          </h2>
+          <p className="text-[14px] max-w-3xl mb-8 leading-relaxed" style={{ color: "var(--ink-muted)" }}>
+            The hackathon corpus is synthetic. We logged every quirk we
+            discovered while building against it and either filtered it or
+            documented it. Most of what looked like our bugs were dataset
+            artifacts surfacing through an honest pipeline.
+          </p>
+          <div className="grid grid-cols-1 gap-3">
+            {[
+              {
+                finding: "Template-reuse across timestamps",
+                example:
+                  'Louise Ladeck has 4 byte-identical "Wasserschaden Bad" emails — Sept 20 plus three more on Nov 13, 15, and 16. Same applies to Schluesselverlust, Defektes Fenster, and ~30 other bodies across the corpus.',
+                handling:
+                  "djb2-hash the body, dedupe inside (entity, 14-day window). Sept + Nov-13 kept (real re-report); Nov-13/15/16 collapse to the first. Wider intervals stay because a tenant re-reporting an unresolved issue 7 weeks later is real signal.",
+              },
+              {
+                finding: "Mismatched outbound subject vs body",
+                example:
+                  'Magrit Mitschke\'s "Re: Schimmel im Schlafzimmer" outbound (June 8) had a body confirming a Kündigungstermin. The synthetic generator paired the wrong template body with the mold subject.',
+                handling:
+                  "Outbound emails (direction === 'outgoing') no longer seed incident.type / incident.status facts. Awaiting-reply detection still uses direction directly, so it doesn't depend on these facts existing.",
+              },
+              {
+                finding: "Mahnung / Kündigung tagged as incident.type",
+                example:
+                  "The PDF extractor wrote incident.type='mahnung' and incident.type='kuendigung' for any letter that mentioned them. These are financial / legal events, not maintenance incidents.",
+                handling:
+                  "Removed both writes. Mahnung lands in financial.mahnung, Kündigung in legal.kuendigung. Dropped 9 phantom recs from the dashboard.",
+              },
+              {
+                finding: "Phantom slug-id entities",
+                example:
+                  "PDF letters created tenant:magrit-mitschke alongside the real tenant:MIE-016 because the recipient lookup keyed on entity.name (which included the salutation) but the letter said 'Magrit Mitschke' bare.",
+                handling:
+                  "buildRouter() now stores both the full and salutation-stripped keys. routeForDoc looks up both. Counts after reset: exactly the 26 / 35 / 16 in stammdaten.",
+              },
+              {
+                finding: "Same-value 'conflicts' rendered with P=1.00",
+                example:
+                  "Three sources all reporting mahnung=true rendered as a 'conflict' with posterior P=1.00 — the system was telling the user three agreeing sources were a disagreement.",
+                handling:
+                  "classifyGroup() in query.ts: if all values normalize-equal, return single (with the most-recent fact); the renderer's countCorroborations() handles the × N sources badge. Real conflicts (different values) still go through the posterior.",
+              },
+              {
+                finding: "Incident contagion via shared email_chain",
+                example:
+                  "Every per-incident-type rec for the same entity was showing the same email_chain[0] — Ferenc Stahr's heating rec displayed his most recent mold email at the top.",
+                handling:
+                  "groupIncidents() now scopes incident.facts to ONLY that type's facts. Polluting it with the entity's other facts caused the chain query to dredge up the latest unrelated source.",
+              },
+            ].map((d) => (
+              <div
+                key={d.finding}
+                className="p-5 rounded-lg"
+                style={{ background: "var(--bg-raised)", border: "1px solid var(--line)" }}
+              >
+                <div className="text-[15px] font-medium mb-2" style={{ letterSpacing: "-0.005em" }}>
+                  {d.finding}
+                </div>
+                <div className="text-[13px] leading-relaxed mb-2" style={{ color: "var(--ink-muted)" }}>
+                  <span className="font-mono text-[11px]" style={{ color: "var(--amber-bright)" }}>
+                    EXAMPLE ·{" "}
+                  </span>
+                  {d.example}
+                </div>
+                <div className="text-[13px] leading-relaxed" style={{ color: "var(--ink-muted)" }}>
+                  <span className="font-mono text-[11px]" style={{ color: "var(--brand)" }}>
+                    HANDLING ·{" "}
+                  </span>
+                  {d.handling}
+                </div>
+              </div>
+            ))}
           </div>
         </section>
 

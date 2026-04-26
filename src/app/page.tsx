@@ -79,6 +79,31 @@ export default function Home() {
       })
       .catch(() => {});
 
+    // Prefetch the full audit log (flat default + stream view) so /audit
+    // paints from cache on first click. Both responses can be ~hundreds
+    // of KB on a populated corpus — kicking the fetches off here lets
+    // them finish while the user reads the pitch.
+    void fetch("/api/audit?view=flat&limit=200")
+      .then((r) => r.json())
+      .then((d) => {
+        try {
+          sessionStorage.setItem("hausbuch:audit:flat:v1", JSON.stringify(d));
+        } catch {
+          /* ignore */
+        }
+      })
+      .catch(() => {});
+    void fetch("/api/audit?view=stream&limit=500")
+      .then((r) => r.json())
+      .then((d) => {
+        try {
+          sessionStorage.setItem("hausbuch:audit:stream:v1", JSON.stringify(d));
+        } catch {
+          /* ignore */
+        }
+      })
+      .catch(() => {});
+
     return () => {
       cancelled = true;
       clearInterval(t);

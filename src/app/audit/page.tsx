@@ -52,7 +52,38 @@ export default function AuditPage() {
   }, [query]);
 
   const load = useCallback(async () => {
-    setLoading(true);
+    const isDefault = !filter.actor && !filter.entity && !debouncedQuery;
+    const cacheKey =
+      view === "stream"
+        ? "hausbuch:audit:stream:v1"
+        : "hausbuch:audit:flat:v1";
+
+    // Default view + no filters: hydrate from sessionStorage if available
+    // so the audit page paints instantly while a fresh fetch runs in
+    // the background. Cache is seeded by the home page's prefetch path.
+    let hydrated = false;
+    if (isDefault) {
+      try {
+        const cached = sessionStorage.getItem(cacheKey);
+        if (cached) {
+          const data = JSON.parse(cached) as { actions?: Action[]; streams?: Stream[] };
+          if (view === "stream") {
+            setStreams(data.streams ?? []);
+            setActions([]);
+          } else {
+            setActions(data.actions ?? []);
+            setStreams([]);
+          }
+          setLoading(false);
+          hydrated = true;
+        }
+      } catch {
+        /* sessionStorage disabled / corrupt — fall through to fetch */
+      }
+    }
+
+    if (!hydrated) setLoading(true);
+
     const params = new URLSearchParams();
     if (filter.actor) params.set("actor", filter.actor);
     if (filter.entity) params.set("entity", filter.entity);
@@ -69,6 +100,14 @@ export default function AuditPage() {
       setStreams([]);
     }
     setLoading(false);
+    // Refresh the cache for next time we land here on default view.
+    if (isDefault) {
+      try {
+        sessionStorage.setItem(cacheKey, JSON.stringify(data));
+      } catch {
+        /* quota / disabled — silently skip */
+      }
+    }
   }, [filter, debouncedQuery, view]);
 
   useEffect(() => { load(); }, [load]);

@@ -1336,18 +1336,32 @@ function FormatComparison() {
     note: string;
   }> = [
     {
-      axis: "Tokens for one entity",
+      axis: "Tokens for one entity (d=3, anchored)",
+      plain: "9,036",
+      hausbuch: "5,746",
+      delta: "−36%",
+      note: "tenant MIE-016, full provenance kept (anchors + Recent activity + Upcoming). Apples-to-apples vs the prose rewrite of the same facts.",
+    },
+    {
+      axis: "Tokens for one entity (d=1, compact)",
       plain: "5,886",
       hausbuch: "775",
       delta: "−87%",
-      note: "tenant Context.md @ detail=1; plain measured as prose-rewritten facts.",
+      note: "same tenant, compact mode strips anchors + volatile sections — what the agent actually ships for cross-references.",
     },
     {
-      axis: "Tokens for the WEG",
+      axis: "Tokens for the WEG (d=3, anchored)",
+      plain: "70,990",
+      hausbuch: "41,666",
+      delta: "−41%",
+      note: "1,784 facts, full provenance. Structured table still compresses materially against narrative prose.",
+    },
+    {
+      axis: "Tokens for the WEG (d=1, compact)",
       plain: "48,995",
       hausbuch: "1,549",
       delta: "−97%",
-      note: "anchored fact table compresses much harder than narrative prose.",
+      note: "WEG at detail=1 — what the agent loads when the WEG is a cross-reference, not the focal entity.",
     },
     {
       axis: "Cache-effective read",

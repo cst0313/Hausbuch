@@ -19,6 +19,7 @@ import { ingest } from "@/lib/ingest";
 import { extractSync } from "@/lib/extractor";
 import { invalidateRecommendationsCache } from "@/lib/recommendations";
 import { buildRouter, routeForDoc } from "@/lib/route-doc";
+import { RAW_EXCERPT_BYTES } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -179,7 +180,7 @@ export async function POST(req: NextRequest) {
             kind: sourceKind,
             title: sourceTitle,
             ingested_at: new Date().toISOString(),
-            raw_excerpt: pdfText.slice(0, 8192),
+            raw_excerpt: pdfText.slice(0, RAW_EXCERPT_BYTES),
             source_prior: 0.85,
           });
           processed++;
@@ -190,7 +191,7 @@ export async function POST(req: NextRequest) {
             facts: probe.length,
             conflicts: 0,
             latency_ms: Math.round(performance.now() - t0pdf),
-            extract_preview: pdfText.slice(0, 8192),
+            extract_preview: pdfText.slice(0, RAW_EXCERPT_BYTES),
             fact_details: probe.map((f) => ({
               entity: entityForPdf,
               predicate: f.predicate,
@@ -206,7 +207,7 @@ export async function POST(req: NextRequest) {
           source: {
             kind: sourceKind,
             title: sourceTitle,
-            raw_excerpt: pdfText.slice(0, 8192),
+            raw_excerpt: pdfText.slice(0, RAW_EXCERPT_BYTES),
             source_prior: 0.85,
           },
         });

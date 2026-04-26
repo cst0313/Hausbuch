@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, getEntity } from "@/lib/db";
 import { ingest } from "@/lib/ingest";
-import type { SourceKind } from "@/lib/types";
+import { RAW_EXCERPT_BYTES, type SourceKind } from "@/lib/types";
 import { extractFromImage, GeminiError } from "@/lib/llm/gemini";
 import { buildRouter, routeForDoc } from "@/lib/route-doc";
 
@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
             kind,
             title: sourceTitle,
             ingested_at: new Date().toISOString(),
-            raw_excerpt: text.slice(0, 8192),
+            raw_excerpt: text.slice(0, RAW_EXCERPT_BYTES),
             source_prior: sourcePrior,
           }),
         );
@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
           facts: probe.length,
           conflicts: 0,
           latency_ms: 0,
-          extract_preview: text.slice(0, 8192),
+          extract_preview: text.slice(0, RAW_EXCERPT_BYTES),
           extractor,
           fact_details: probe.map((f) => ({
             entity,
@@ -118,7 +118,7 @@ export async function POST(req: NextRequest) {
         source: {
           kind,
           title: sourceTitle,
-          raw_excerpt: text.slice(0, 8192),
+          raw_excerpt: text.slice(0, RAW_EXCERPT_BYTES),
           source_prior: sourcePrior,
         },
       });

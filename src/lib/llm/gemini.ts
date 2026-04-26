@@ -279,8 +279,15 @@ export async function extractFromImage(input: ExtractFromImageInput): Promise<Ex
       },
     ],
     generationConfig: {
+      // Bumped 4096 → 32768 to handle long multipage scanned documents
+      // (property design / inspection reports run 30-60 pages). Pairs with
+      // RAW_EXCERPT_BYTES = 128 KB downstream — no point capping OCR if the
+      // extractor would slice past the cap. Disable thinking so the entire
+      // budget goes to visible transcribed text (gemini-2.5-flash otherwise
+      // burns tokens on a thinking trace that's invisible to readText()).
       temperature: 0,
-      maxOutputTokens: 4096,
+      maxOutputTokens: 32768,
+      thinkingConfig: { thinkingBudget: 0 },
     },
   };
 

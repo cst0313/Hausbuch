@@ -28,7 +28,7 @@ import {
 } from "./db";
 import { extractSync } from "./extractor";
 import { ENTITY } from "./seed";
-import type { EntityType, Source } from "./types";
+import { RAW_EXCERPT_BYTES, type EntityType, type Source } from "./types";
 
 export type Router = {
   tenantByName: Map<string, string>;
@@ -91,7 +91,7 @@ export function routeForDoc(
     kind: isInvoice ? "invoice" : "letter",
     title: filename,
     ingested_at: new Date().toISOString(),
-    raw_excerpt: text.slice(0, 8192),
+    raw_excerpt: text.slice(0, RAW_EXCERPT_BYTES),
     source_prior: 0.9,
   } as Source);
 

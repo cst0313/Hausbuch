@@ -27,6 +27,14 @@ next-env.d.ts
 lumen.db*
 hausbuch.db*
 
+# Exception: ship a pre-seeded snapshot so the repo runs after `git clone`
+# without anyone having to obtain or unpack the hackathon dataset. The
+# committed file contains only the public hackathon corpus
+# (Immanuelkirchstr. 26). Local dev writes (uploads, agent learnings) land
+# in the WAL file (still ignored above) until you `pragma wal_checkpoint`
+# and re-commit on purpose.
+!data/hausbuch.db
+
 # logs
 npm-debug.log*
 yarn-debug.log*

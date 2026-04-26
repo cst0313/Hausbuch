@@ -28,14 +28,50 @@ See [`PAPER.md`](PAPER.md) for the long-form argument.
 ## Quick start
 
 ```bash
+git clone https://github.com/cst0313/Hausbuch.git
+cd Hausbuch
 npm install
-cp .env.example .env.local                      # then fill in GEMINI_API_KEY
-unzip hackathon-*.zip -d tmp/                   # produces tmp/hackathon/{stammdaten,emails,briefe,rechnungen,bank,incremental}
-node scripts/extract-pdf-texts.mjs              # one-time: pre-extracts text from 339 PDFs
 npm run dev                                     # http://localhost:3000
 ```
 
-The fact store seeds automatically on first request from `tmp/hackathon/`. Resetting:
+That's it. The repo ships a pre-seeded SQLite snapshot at `data/hausbuch.db`
+(135 entities, 14k facts from the public Immanuelkirchstr. 26 hackathon
+corpus), so the demo runs end-to-end without any API keys, dataset
+downloads, or seed scripts.
+
+> `npm install` builds the native `better-sqlite3` binding. On most
+> machines a prebuilt is downloaded automatically. If it falls back to
+> source: Linux needs `build-essential` + `python3`; macOS needs Xcode CLT
+> (`xcode-select --install`); Windows needs the "Desktop development with
+> C++" workload from Visual Studio Build Tools.
+
+### Optional: turn on the live LLM features
+
+Browsing the seeded corpus needs nothing. The features below need keys:
+
+| Feature | Needs | Without it |
+|---|---|---|
+| ⌘K agent (Q&A on /dashboard) | `GEMINI_API_KEY` | button is inert |
+| Image / scanned-PDF OCR on upload | `GEMINI_API_KEY` | falls back to pdf-parse text only |
+| Fact extraction quality | `ANTHROPIC_API_KEY` (optional) | bilingual heuristic extractor (works, slightly noisier) |
+| /research baselines (long-context, RAG) | `ANTHROPIC_API_KEY` | rows show "no key configured" |
+
+```bash
+cp .env.example .env.local                      # then paste keys you have
+```
+
+### Reseeding from the hackathon dataset (maintainers only)
+
+If you've checked out the original `hackathon-*.zip`:
+
+```bash
+unzip hackathon-*.zip -d tmp/                   # tmp/hackathon/{stammdaten,emails,briefe,rechnungen,bank,incremental}
+node scripts/extract-pdf-texts.mjs              # one-time: pre-extracts text from 339 PDFs
+rm data/hausbuch.db                             # delete the shipped snapshot
+npm run dev                                     # seedIfEmpty rebuilds the DB on first request
+```
+
+To reset the live state to the shipped snapshot:
 
 ```bash
 curl -X POST http://localhost:3000/api/reset    # truncates tables and re-seeds in place

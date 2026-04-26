@@ -494,7 +494,12 @@ function DemoNarrative() {
           axis we measured.
         </>
       ),
-      widget: <FormatComparison />,
+      widget: (
+        <>
+          <ContextMdSample />
+          <FormatComparison />
+        </>
+      ),
       metric: (
         <div
           className="font-mono"
@@ -1148,6 +1153,166 @@ function AgentDemo() {
         }}
       >
         {sel.a}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * What Context.md actually looks like. Annotated sample of a tenant's
+ * Markdown view — padded keys, anchored fact blocks (HTML comments),
+ * fixed section order, inline ^[source title] citations. Side labels
+ * point at each structural choice so the reader sees WHY the format
+ * caches well + carries provenance.
+ */
+function ContextMdSample() {
+  const C = {
+    cmt: "var(--fg-dim)",
+    key: "var(--fg)",
+    val: "var(--fg)",
+    cite: "var(--brand)",
+    section: "var(--brand-tint)",
+    note: "var(--fg-muted)",
+  };
+  return (
+    <div
+      style={{
+        marginBottom: 14,
+        border: "1px solid var(--border)",
+        borderRadius: 10,
+        background: "var(--bg-elevated)",
+        padding: 16,
+        maxWidth: 680,
+      }}
+    >
+      <div
+        className="font-mono"
+        style={{
+          fontSize: 10,
+          color: "var(--fg-dim)",
+          textTransform: "uppercase",
+          letterSpacing: "0.06em",
+          marginBottom: 10,
+        }}
+      >
+        what the agent reads · /context/tenant:MIE-017
+      </div>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 200px",
+          gap: 14,
+        }}
+      >
+        <pre
+          className="font-mono"
+          style={{
+            margin: 0,
+            padding: "12px 14px",
+            background: "var(--bg)",
+            border: "1px solid var(--border-muted)",
+            borderRadius: 6,
+            fontSize: 11.5,
+            lineHeight: 1.65,
+            color: C.val,
+            overflowX: "auto",
+            whiteSpace: "pre",
+          }}
+        >
+{`# Context.md — Edeltraud Renner
+> auto-generated · entity:tenant:MIE-017
+
+`}<span style={{ color: C.section, fontWeight: 600 }}>{`## Identity`}</span>{`
+`}<span style={{ color: C.cmt }}>{`<!-- fact:a91c4f -->`}</span>{`
+name              Edeltraud Renner            `}<span style={{ color: C.cite }}>{`^[Master record]`}</span>{`
+`}<span style={{ color: C.cmt }}>{`<!-- /fact:a91c4f -->`}</span>{`
+email             edeltraud.renner@gmx.de     `}<span style={{ color: C.cite }}>{`^[Master record]`}</span>{`
+
+`}<span style={{ color: C.section, fontWeight: 600 }}>{`## Tenancy`}</span>{`
+unit              EH-029                      `}<span style={{ color: C.cite }}>{`^[Master record]`}</span>{`
+rent.base         €1,781 / month              `}<span style={{ color: C.cite }}>{`^[Master record]`}</span>{`
+start             2018-04-01                  `}<span style={{ color: C.cite }}>{`^[Master record]`}</span>{`
+
+`}<span style={{ color: C.section, fontWeight: 600 }}>{`## Legal`}</span>{`
+rent_reduction    true · 15%                  `}<span style={{ color: C.cite }}>{`^[2025-12-15 rent-reduction notice]`}</span>{`
+termination       true                        `}<span style={{ color: C.cite }}>{`^[2025-10-13 termination letter]`}</span>{`
+
+`}<span style={{ color: C.section, fontWeight: 600 }}>{`## Incidents & issues`}</span>{`
+type              water_damage                `}<span style={{ color: C.cite }}>{`^[2025-12-15 rent-reduction notice]`}</span>{`
+type              mold                        `}<span style={{ color: C.cite }}>{`^[2025-12-15 rent-reduction notice]`}</span>{`
+status            dispatched                  `}<span style={{ color: C.cite }}>{`^[Sanitär Schulze engaged]`}</span>{`
+
+`}<span style={{ color: C.cmt }}>{`<!-- Hausbuch · 47 facts · 8 sources · detail=3 -->`}</span>
+        </pre>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 14,
+            fontSize: 10.5,
+            color: C.note,
+            lineHeight: 1.45,
+          }}
+        >
+          <Annotation
+            color="var(--brand-tint)"
+            label="Fixed section order"
+            body="Identity → Tenancy → Legal → Incidents. Same prefix every render → 90% prompt-cache hit rate."
+          />
+          <Annotation
+            color="var(--fg-dim)"
+            label="<!-- fact:IDENT -->"
+            body="Anchor comments wrap each line so a new email can patch one block in place — no full regen."
+          />
+          <Annotation
+            color="var(--brand)"
+            label="^[source title]"
+            body="Inline citation per line. Click any value in the live page → the actual PDF / email opens with the span outlined."
+          />
+          <Annotation
+            color="var(--fg)"
+            label="Padded keys"
+            body="Predicate column padded to 18 chars. Aligned columns let the LLM scan vertically; byte positions stay stable."
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Annotation({
+  color,
+  label,
+  body,
+}: {
+  color: string;
+  label: string;
+  body: string;
+}) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "8px 1fr", gap: 8, alignItems: "start" }}>
+      <span
+        style={{
+          width: 4,
+          marginTop: 4,
+          height: "calc(100% - 8px)",
+          background: color,
+          borderRadius: 2,
+        }}
+      />
+      <div>
+        <div
+          className="font-mono"
+          style={{
+            fontSize: 10,
+            color,
+            fontWeight: 600,
+            marginBottom: 2,
+          }}
+        >
+          {label}
+        </div>
+        <div>{body}</div>
       </div>
     </div>
   );

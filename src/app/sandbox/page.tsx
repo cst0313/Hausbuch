@@ -252,9 +252,10 @@ function EmptyState({
 
       <section
         style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 16,
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          flexWrap: "wrap",
           marginBottom: 28,
         }}
       >
@@ -262,7 +263,7 @@ function EmptyState({
           onClick={onLoadSample}
           disabled={busy === "loading-sample"}
           style={{
-            padding: "20px 22px",
+            padding: "18px 22px",
             borderRadius: 12,
             border: "1px solid var(--brand)",
             background: busy === "loading-sample" ? "var(--brand-wash)" : "var(--brand)",
@@ -275,13 +276,15 @@ function EmptyState({
             display: "flex",
             flexDirection: "column",
             gap: 6,
+            flex: "1 1 360px",
+            minWidth: 0,
           }}
         >
           <span style={{ fontSize: 16, fontWeight: 600 }}>
             {busy === "loading-sample" ? "Loading sample…" : "Load sample bundle"}
           </span>
           <span style={{ fontSize: 12, opacity: 0.85 }}>
-            7 real Hausverwaltung PDFs (Mahnung, Kündigung, Hausgeld, Mieterhöhung, ETV, BKA, Vendor invoice). Precomputed — paints instantly.
+            7 real Hausverwaltung PDFs (Mahnung, Kündigung, Hausgeld, Mieterhöhung, ETV, BKA, Vendor invoice).
           </span>
         </button>
         <a
@@ -289,26 +292,17 @@ function EmptyState({
           download
           className="mono"
           style={{
-            padding: "20px 22px",
-            borderRadius: 12,
-            border: "1px dashed var(--border)",
+            padding: "8px 12px",
+            borderRadius: 6,
+            border: "1px solid var(--border)",
             background: "var(--bg)",
-            color: "var(--fg-muted)",
-            fontSize: 12,
-            fontWeight: 500,
+            color: "var(--brand)",
+            fontSize: 11,
             textDecoration: "none",
-            display: "flex",
-            flexDirection: "column",
-            gap: 6,
-            justifyContent: "center",
+            whiteSpace: "nowrap",
           }}
         >
-          <span style={{ fontSize: 13, color: "var(--fg)", fontWeight: 600 }}>
-            sample-bundle.zip ↓
-          </span>
-          <span style={{ fontSize: 11, color: "var(--fg-dim)" }}>
-            Download the 7 PDFs to upload anywhere else.
-          </span>
+          sample-bundle.zip ↓
         </a>
       </section>
 

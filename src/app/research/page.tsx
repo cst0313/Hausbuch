@@ -101,6 +101,24 @@ const CAPABILITIES: Array<{ stage: string; title: string; body: string; location
     body: "Agent answers are generated only from the rendered Context.md slice plus the targeted facts retrieved by the question. Every claim in the answer is reachable to a Source row via fact.span — zero free-form retrieval at answer time.",
     location: "src/lib/agent.ts · src/lib/compose.ts",
   },
+  {
+    stage: "perf",
+    title: "Detail-tiered Context.md (-90% tokens)",
+    body: "render() honors detail levels: 1=compact (no anchors, no Recent activity, no Upcoming), 2=anchored, 3=full. The agent uses detail=3 only for the focal entity and detail=1 for cross-references. Measured deltas on the demo corpus: WEG 49,000 → 1,549 tokens (−97%), tenants 5,800 → ~400 tokens (−93%) at detail=1. Saves token spend per agent query and lets multiple secondary entities fit in the budget without truncation.",
+    location: "src/lib/renderer.ts · src/lib/agent.ts",
+  },
+  {
+    stage: "perf",
+    title: "Render + recs cache, invalidated on write",
+    body: "Rendered Context.md is memoized by (entity, detail, at_valid, at_known) with a soft 256-entry FIFO. The recommendation engine caches its full output (5-min TTL ceiling). Both invalidate exactly when insertFact() touches the relevant entity — no stale reads, no per-request rebuilds. Bulk writes (seed, batch ingest) suppress invalidation entirely and re-warm once at the end so 16K fact writes don't trigger 16K cache busts.",
+    location: "src/lib/renderer.ts · src/lib/recommendations.ts · src/lib/db.ts",
+  },
+  {
+    stage: "perf",
+    title: "Hover-prefetch for incident detail",
+    body: "When the manager hovers a recommendation row, the dashboard fires GET /api/source/<id> for each email_chain message and POST /api/draft with the rec's draft_context. The Gemini reply lands in sessionStorage at the same key the StreamPanel reads from, so clicking the row paints the detail pane with no further latency. Per-rec dedup prevents thrash on repeated hovers.",
+    location: "src/lib/prefetch-incident.ts · src/components/StreamPanel.tsx",
+  },
 ];
 
 

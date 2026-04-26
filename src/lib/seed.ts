@@ -22,9 +22,11 @@ import {
   logEvent,
   newFactId,
   newSourceId,
+  setSuppressDerivedCacheInvalidation,
 } from "./db";
 import { classifyEmailIncident } from "./classify";
 import { scoreIncidentTypes, hasStrongIncidentSignal } from "./incident-classify";
+import { getRecommendations } from "./recommendations";
 
 // Emails where keyword scoring couldn't pick an incident type but the
 // category metadata says it IS an incident. We collect them during the
@@ -115,6 +117,10 @@ export function seedIfEmpty(database: Database.Database): void {
   const data: Stammdaten = JSON.parse(fs.readFileSync(STAMMDATEN_PATH, "utf8"));
   const now = new Date().toISOString();
 
+  // Bulk-write mode: suppress per-fact cache invalidations during the
+  // ~16K-fact seed. We pre-warm caches explicitly at the end.
+  setSuppressDerivedCacheInvalidation(true);
+
   const tx = database.transaction(() => {
     seedWeg(data.liegenschaft, now);
     seedBuildings(data.gebaeude, now);
@@ -130,10 +136,21 @@ export function seedIfEmpty(database: Database.Database): void {
   importBankTransactions();
   importPdfs(data);
 
+  // Re-enable derived-cache invalidation now that bulk writes are done.
+  setSuppressDerivedCacheInvalidation(false);
+
   const entityCount = database.prepare("SELECT COUNT(*) as n FROM entities").get() as { n: number };
   const factCount = database.prepare("SELECT COUNT(*) as n FROM facts").get() as { n: number };
   const sourceCount = database.prepare("SELECT COUNT(*) as n FROM sources").get() as { n: number };
   console.log(`[hausbuch] seed complete: ${entityCount.n} entities, ${factCount.n} facts, ${sourceCount.n} sources`);
+
+  // Pre-warm the recommendation cache. The cold rebuild is ~7s on the demo
+  // corpus (133 entities × 16K facts × the rec engine's per-entity scan);
+  // doing it now means the first dashboard / palette hit lands in the
+  // already-warm 15s TTL window instead of paying the rebuild itself.
+  const t0 = Date.now();
+  const warmed = getRecommendations();
+  console.log(`[hausbuch] pre-warmed ${warmed.length} recommendations in ${Date.now() - t0}ms`);
 
   // Fire-and-forget LLM classification for ambiguous incident emails.
   // Capped + async so seed returns immediately; facts trickle in over the next
@@ -157,6 +174,14 @@ async function classifyPending(): Promise<void> {
     }
   }
   console.log(`[hausbuch] LLM classification done: ${resolved}/${queue.length} resolved`);
+  // Re-warm: each writeFact invalidated the recs cache, so the next
+  // dashboard hit would otherwise pay the cold rebuild. Doing it now
+  // keeps the user-facing latency consistently low.
+  if (resolved > 0) {
+    const t0 = Date.now();
+    const warmed = getRecommendations();
+    console.log(`[hausbuch] re-warmed ${warmed.length} recs in ${Date.now() - t0}ms after LLM pass`);
+  }
 }
 
 // ── WEG (Liegenschaft) ──────────────────────────────────────────────────────

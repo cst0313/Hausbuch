@@ -307,6 +307,30 @@ export function insertFact(f: Fact): void {
       superseded_by: f.superseded_by ?? null,
       ident: f.ident,
     });
+
+  // Bust derived caches that depend on this entity's facts. Lazy imports
+  // keep the module graph acyclic — renderer + recommendations both import
+  // from db, not the other way around. Skipped during seed (16K writes
+  // would each invalidate; the seed pre-warms once at the end instead).
+  if (suppressDerivedCacheInvalidation) return;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { invalidateRenderCacheForEntity } = require("./renderer") as typeof import("./renderer");
+  invalidateRenderCacheForEntity(f.entity);
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { invalidateRecommendationsCache } = require("./recommendations") as typeof import("./recommendations");
+  invalidateRecommendationsCache();
+}
+
+/**
+ * When true, insertFact() skips invalidating render + recs caches. Set to
+ * true around bulk imports (seed, batch ingest) where the caller will
+ * pre-warm the cache itself once the writes complete. Avoids paying
+ * O(N) invalidations during O(N) writes — the user-visible cost is the
+ * same; this just removes the per-write thrash.
+ */
+let suppressDerivedCacheInvalidation = false;
+export function setSuppressDerivedCacheInvalidation(v: boolean): void {
+  suppressDerivedCacheInvalidation = v;
 }
 
 export function logEvent(kind: FactEventKind, factId: string, note?: string): void {

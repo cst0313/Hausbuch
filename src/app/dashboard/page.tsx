@@ -8,6 +8,7 @@ import { useLocale } from "@/components/LocaleProvider";
 import { CmdK } from "@/components/CmdK";
 import type { Band } from "@/components/DashboardPrimitives";
 import { StreamPanel, type StreamRec } from "@/components/StreamPanel";
+import { prefetchIncident } from "@/lib/prefetch-incident";
 import { UploadResultModal, type UploadResult } from "@/components/UploadPanel";
 import { UploadReviewModal } from "@/components/UploadReviewModal";
 import { ContractorPicker, ContractorProfilePanel, type Contractor } from "@/components/ContractorPanel";
@@ -889,7 +890,13 @@ function RecRow({
         background: "transparent",
         transition: "background 120ms",
       }}
-      onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(239,236,229,0.55)")}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.background = "rgba(239,236,229,0.55)";
+        // Prefetch email chain bodies + the Gemini reply draft so the
+        // StreamPanel paints instantly when the user actually clicks.
+        // Fire-and-forget; safe to spam (per-rec dedup inside).
+        prefetchIncident(rec);
+      }}
       onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
     >
       {/* Severity tick */}

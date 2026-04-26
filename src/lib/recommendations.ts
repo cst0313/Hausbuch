@@ -109,11 +109,13 @@ export type Recommendation = {
 
 // ── Main entry ──────────────────────────────────────────────────────────────
 
-// Process-wide TTL cache — recommendations rebuild from facts is O(N entities × N facts)
-// and runs ~2s on the demo corpus. The list only changes when an ingest writes new
-// facts; for everything else (palette, dashboard refresh) a 15s window is fine.
+// Process-wide cache. The rec rebuild is the heaviest read path on the
+// dashboard (~7s cold on the demo corpus, 133 entities × 16K facts).
+// The result only changes when a fact is written, so insertFact() in db.ts
+// invalidates the cache directly — TTL is just a defensive ceiling for
+// edge cases (manual SQL, external writers).
 let _cache: { at: number; value: Recommendation[] } | null = null;
-const CACHE_TTL_MS = 15_000;
+const CACHE_TTL_MS = 5 * 60_000;
 
 export function invalidateRecommendationsCache(): void {
   _cache = null;

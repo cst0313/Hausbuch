@@ -5,6 +5,44 @@ import { getSource, countCorroborations } from "./db";
 import { fullView } from "./query";
 
 /**
+ * In-memory cache for rendered Context.md.
+ *
+ * Why: baseline showed render() costs 50–470ms/call (WEG: 465ms p50) and the
+ * agent loads 5 entities per query — that's 1–2s of pure render per ask, on
+ * a corpus that doesn't change between asks. Caching brings warm hits to
+ * ~0ms.
+ *
+ * Keyed by entity + detail + bitemporal coords. Bust on any insertFact for
+ * that entity (see invalidateRenderCacheFor in db.ts).
+ *
+ * Bounded so a runaway entity-id doesn't blow memory; LRU is overkill for
+ * a hackathon corpus of 133 entities — a Map with a soft cap behaves the
+ * same in practice.
+ */
+const RENDER_CACHE = new Map<string, string>();
+const RENDER_CACHE_SOFT_CAP = 256; // 133 entities × ~2 detail tiers in active use
+
+function renderCacheKey(entity: string, opts: RenderOptions): string {
+  const detail = opts.detail ?? 3;
+  const av = opts.at_valid ?? "";
+  const ak = opts.at_known ?? "";
+  return `${entity}::${detail}::${av}::${ak}`;
+}
+
+export function invalidateRenderCacheForEntity(entity: string): void {
+  // Match any cached key for this entity (across detail tiers / time coords).
+  // Linear scan is fine at this size.
+  const prefix = `${entity}::`;
+  for (const k of RENDER_CACHE.keys()) {
+    if (k.startsWith(prefix)) RENDER_CACHE.delete(k);
+  }
+}
+
+export function clearRenderCache(): void {
+  RENDER_CACHE.clear();
+}
+
+/**
  * Render the current bitemporal view of an entity as a Context.md document.
  *
  * Every fact line is wrapped in anchor comments so the patcher can do
@@ -46,7 +84,33 @@ const SECTION_ORDER = [
 const KEY_PAD = 18;
 
 export function render(entity: string, opts: RenderOptions = {}): string {
+  const cacheKey = renderCacheKey(entity, opts);
+  const hit = RENDER_CACHE.get(cacheKey);
+  if (hit !== undefined) return hit;
+
+  const out = renderUncached(entity, opts);
+
+  if (RENDER_CACHE.size >= RENDER_CACHE_SOFT_CAP) {
+    // Soft eviction: drop the first-inserted key. Map iteration order is
+    // insertion order, so this is a cheap FIFO without LRU bookkeeping.
+    const firstKey = RENDER_CACHE.keys().next().value;
+    if (firstKey !== undefined) RENDER_CACHE.delete(firstKey);
+  }
+  RENDER_CACHE.set(cacheKey, out);
+  return out;
+}
+
+function renderUncached(entity: string, opts: RenderOptions = {}): string {
   const detail: Detail = (opts.detail ?? 3) as Detail;
+  // Detail tiers — drive what we include vs strip:
+  //   1 = compact: no anchor comments, no Recent activity, no Conflicts math
+  //                (still includes the conflict header + winning value),
+  //                no Upcoming. Cheapest token spend for the agent's first-pass.
+  //   2 = anchored: full anchored facts but no Recent activity
+  //   3 = full: everything (default; what /context/[id] renders)
+  const compact = detail <= 1;
+  const noRecent = detail <= 2;
+  const noUpcoming = detail <= 1;
   const { current: view, upcoming } = fullView(entity, {
     at_valid: opts.at_valid,
     at_known: opts.at_known,
@@ -96,7 +160,7 @@ export function render(entity: string, opts: RenderOptions = {}): string {
     lines.push(`## ${heading}`);
     for (const [key, view] of singles) {
       if (view.kind !== "single") continue;
-      lines.push(...factBlock(key, view.fact, detail));
+      lines.push(...factBlock(key, view.fact, detail, "", compact));
     }
     lines.push("");
   }
@@ -105,7 +169,7 @@ export function render(entity: string, opts: RenderOptions = {}): string {
     lines.push(`## Other`);
     for (const [key, v] of other.sort(sortByKnown)) {
       if (v.kind === "single") {
-        lines.push(...factBlock(key, v.fact, detail));
+        lines.push(...factBlock(key, v.fact, detail, "", compact));
       } else {
         conflicts.push([key, v]);
       }
@@ -113,25 +177,27 @@ export function render(entity: string, opts: RenderOptions = {}): string {
     lines.push("");
   }
 
-  const upcomingEntries = Object.entries(upcoming);
-  if (upcomingEntries.length > 0) {
-    lines.push(`## Upcoming`);
-    for (const [key, v] of upcomingEntries.sort(sortByKnown)) {
-      if (v.kind === "single") {
-        const when = v.fact.valid_from ? ` (eff. ${v.fact.valid_from})` : "";
-        lines.push(...factBlock(key, v.fact, detail, when));
-      } else {
-        lines.push(...conflictBlock(key, v));
+  if (!noUpcoming) {
+    const upcomingEntries = Object.entries(upcoming);
+    if (upcomingEntries.length > 0) {
+      lines.push(`## Upcoming`);
+      for (const [key, v] of upcomingEntries.sort(sortByKnown)) {
+        if (v.kind === "single") {
+          const when = v.fact.valid_from ? ` (eff. ${v.fact.valid_from})` : "";
+          lines.push(...factBlock(key, v.fact, detail, when, compact));
+        } else {
+          lines.push(...conflictBlock(key, v, compact));
+        }
       }
+      lines.push("");
     }
-    lines.push("");
   }
 
   if (conflicts.length > 0) {
     lines.push(`## ⚠ Conflicts`);
     for (const [key, v] of conflicts) {
       if (v.kind !== "conflict") continue;
-      lines.push(...conflictBlock(key, v));
+      lines.push(...conflictBlock(key, v, compact));
       lines.push("");
     }
   }
@@ -139,7 +205,7 @@ export function render(entity: string, opts: RenderOptions = {}): string {
   // Recent activity — last 5 sources ingested for this entity, newest first.
   // Surfaces sources even when extraction produced no facts (e.g., a lawyer
   // letter that didn't match an extractor pattern but is the most-recent event).
-  const recent = listRecentSourcesForEntity(entity, 5);
+  const recent = noRecent ? [] : listRecentSourcesForEntity(entity, 5);
   if (recent.length > 0) {
     lines.push(`## Recent activity`);
     for (const s of recent) {
@@ -177,8 +243,18 @@ export function render(entity: string, opts: RenderOptions = {}): string {
  * Anchored block renderers
  * ──────────────────────────────────────────────────────────────────────── */
 
-function factBlock(predicate: string, fact: Fact, detail: Detail, suffix = ""): string[] {
+function factBlock(
+  predicate: string,
+  fact: Fact,
+  detail: Detail,
+  suffix = "",
+  compact = false,
+): string[] {
   const line = renderFactLine(shortKey(predicate), fact, detail) + suffix;
+  // Compact mode (detail≤1) drops the surgical-patch anchors. Anchors are
+  // only useful when /api/patched-context is going to do an in-place edit —
+  // for the agent's read path they're pure token overhead.
+  if (compact) return [line];
   return [
     `<!-- fact:${fact.ident} -->`,
     line,
@@ -186,10 +262,27 @@ function factBlock(predicate: string, fact: Fact, detail: Detail, suffix = ""): 
   ];
 }
 
-function conflictBlock(predicate: string, v: Extract<PredicateView, { kind: "conflict" }>): string[] {
+function conflictBlock(
+  predicate: string,
+  v: Extract<PredicateView, { kind: "conflict" }>,
+  compact = false,
+): string[] {
   const key = predicate.replace(/[^a-z0-9._-]/gi, "_");
   const block: string[] = [];
-  block.push(`<!-- conflict:${key} -->`);
+  if (!compact) block.push(`<!-- conflict:${key} -->`);
+  if (compact) {
+    // Compact: just the winning value with a "(conflict)" tag — agent
+    // doesn't need to see the full posterior to answer "what's the rent?"
+    const winner = v.posterior.entries.reduce((a, b) =>
+      a.probability > b.probability ? a : b,
+    );
+    const winningFact = v.facts.find((f) => String(f.value) === String(winner.value)) ?? v.facts[0];
+    const src = getSource(winningFact.source);
+    block.push(
+      `${shortKey(predicate).padEnd(KEY_PAD, " ")}${formatValue(winningFact)} ⚠ conflict (P=${winner.probability.toFixed(2)})  ^[${src?.title ?? winningFact.source}]`,
+    );
+    return block;
+  }
   block.push(`${shortKey(predicate)}:  ⚠ conflict`);
   for (const f of v.facts) {
     const src = getSource(f.source);

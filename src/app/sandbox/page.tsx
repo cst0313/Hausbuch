@@ -7,6 +7,25 @@ import { Nav } from "@/components/Nav";
 import { UploadInspector, type IngestSummary } from "@/components/UploadInspector";
 import { AddEntityModal } from "@/components/AddEntityModal";
 import { CmdK } from "@/components/CmdK";
+import { StreamPanel, type StreamRec } from "@/components/StreamPanel";
+
+/**
+ * Curated demo subset for the "Load sample bundle" button. These are
+ * the five tenants in the seeded corpus with the richest mix of email
+ * threads, incident types, and legal escalations — enough variety to
+ * show off the dashboard's interactions (StreamPanel, draft, dispatch,
+ * timeline) without dumping the full 200+ rec backlog on the demo viewer.
+ */
+const DEMO_ENTITY_IDS = [
+  "tenant:MIE-017", // Edeltraud Renner — Mietminderung + Kündigung
+  "tenant:MIE-016", // Magrit Mitschke — water_damage, mold, heating
+  "tenant:MIE-008", // Ferenc Stahr — multiple incidents
+  "tenant:MIE-022", // Carsten Austermühle — Mahnung
+  "tenant:MIE-018", // Louise Ladeck — water_damage
+];
+const DEMO_REC_LIMIT = 6;
+
+const PERSIST_KEY = "hausbuch:sandbox:v1";
 
 type SandboxRec = {
   id: string;
@@ -58,6 +77,61 @@ export default function SandboxPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [streamRec, setStreamRec] = useState<SandboxRec | null>(null);
+  const [streamOpen, setStreamOpen] = useState(false);
+
+  // Hydrate sandbox state from sessionStorage on mount. Without this,
+  // navigating to /context for an entity and clicking Back lands the
+  // user back on /sandbox with state="empty" — losing the loaded
+  // sample bundle or uploaded data.
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(PERSIST_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as {
+        state: SandboxState;
+        recs: SandboxRec[];
+        summary: SandboxSummary | null;
+        infoOnly: SampleFixture["info_only"];
+        entityIds: string[];
+      };
+      if (parsed.state && parsed.state !== "empty") {
+        setState(parsed.state);
+        setRecs(parsed.recs ?? []);
+        setSummary(parsed.summary ?? null);
+        setInfoOnly(parsed.infoOnly ?? []);
+        sandboxEntityIds.current = new Set(parsed.entityIds ?? []);
+      }
+    } catch {
+      /* sessionStorage disabled / corrupt — start fresh */
+    }
+  }, []);
+
+  // Persist on every state change so Back from /context restores the view.
+  useEffect(() => {
+    if (state === "empty") {
+      try {
+        sessionStorage.removeItem(PERSIST_KEY);
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    try {
+      sessionStorage.setItem(
+        PERSIST_KEY,
+        JSON.stringify({
+          state,
+          recs,
+          summary,
+          infoOnly,
+          entityIds: [...sandboxEntityIds.current],
+        }),
+      );
+    } catch {
+      /* quota / disabled — survive without persistence */
+    }
+  }, [state, recs, summary, infoOnly]);
 
   // ⌘K / "/" opens the agent palette inside the sandbox tab.
   useEffect(() => {
@@ -76,20 +150,44 @@ export default function SandboxPage() {
   }, []);
 
   /**
-   * Sample bundle: served as a precomputed JSON fixture so loading is
-   * instant — no engine round trip, no waiting for /api/recommendations.
-   * The fixture lives at /public/sandbox/sample-bundle-recs.json and
-   * mirrors what the engine WOULD produce from the 7 PDFs (Mahnung,
-   * Kündigung, Hausgeld, Mieterhöhung; plus three info-only sources).
+   * Sample bundle: pulls a curated subset of REAL recs from the seeded
+   * corpus — five tenants with the richest mix of email threads,
+   * incident types, and legal escalations. The recs come back with full
+   * email_chain + actions, so the sandbox StreamPanel + click-through
+   * behaves identically to the live /dashboard. No hand-crafted fixture.
    */
   const loadSample = async () => {
     setBusy("loading-sample");
     setMessage(null);
     try {
-      const data = (await fetch("/sandbox/sample-bundle-recs.json").then((r) => r.json())) as SampleFixture;
-      setRecs(data.recommendations ?? []);
-      setSummary(data.summary);
-      setInfoOnly(data.info_only ?? []);
+      const data = (await fetch("/api/recommendations").then((r) => r.json())) as {
+        recommendations?: SandboxRec[];
+      };
+      const all = data.recommendations ?? [];
+      const allow = new Set(DEMO_ENTITY_IDS);
+      const filtered = all.filter((r) => allow.has(r.entity_id));
+      // Severity-sort and cap so the demo opens with a tight queue.
+      const order: Record<SandboxRec["severity"], number> = {
+        critical: 0,
+        high: 1,
+        medium: 2,
+        low: 3,
+      };
+      const ranked = filtered
+        .sort((a, b) => order[a.severity] - order[b.severity])
+        .slice(0, DEMO_REC_LIMIT);
+      // Track these entities as in-scope so any subsequent uploads
+      // accumulate into the same sandbox view.
+      sandboxEntityIds.current = new Set(ranked.map((r) => r.entity_id));
+      setRecs(ranked);
+      setSummary({
+        files_total: ranked.length,
+        files_processed: ranked.length,
+        facts_added: ranked.reduce((n, r) => n + (r.facts?.length ?? 0), 0),
+        entities_touched: sandboxEntityIds.current.size,
+        open_recs: ranked.length,
+      });
+      setInfoOnly([]);
       setState("sample");
       setMessage(null);
     } catch (err) {
@@ -97,6 +195,15 @@ export default function SandboxPage() {
     } finally {
       setBusy("idle");
     }
+  };
+
+  const openStream = (rec: SandboxRec) => {
+    setStreamRec(rec);
+    setStreamOpen(true);
+  };
+  const closeStream = () => {
+    setStreamOpen(false);
+    setTimeout(() => setStreamRec(null), 250);
   };
 
   /**
@@ -168,7 +275,6 @@ export default function SandboxPage() {
           <EmptyState
             onLoadSample={loadSample}
             onIngested={onIngested}
-            onAddEntity={() => setAddOpen(true)}
             busy={busy}
             message={message}
           />
@@ -182,6 +288,7 @@ export default function SandboxPage() {
             onAskAgent={() => setPaletteOpen(true)}
             onAddEntity={() => setAddOpen(true)}
             onIngested={onIngested}
+            onOpenStream={openStream}
           />
         )}
       </main>
@@ -193,6 +300,18 @@ export default function SandboxPage() {
           setPaletteOpen(false);
           window.location.href = `/context/${encodeURIComponent(id)}`;
         }}
+      />
+
+      <StreamPanel
+        rec={streamRec as StreamRec | null}
+        open={streamOpen}
+        onClose={closeStream}
+        locale="en"
+        sent={false}
+        resolved={false}
+        onResolve={() => {}}
+        onSend={() => {}}
+        onDispatch={() => {}}
       />
 
       <AddEntityModal
@@ -214,13 +333,11 @@ export default function SandboxPage() {
 function EmptyState({
   onLoadSample,
   onIngested,
-  onAddEntity,
   busy,
   message,
 }: {
   onLoadSample: () => void;
   onIngested: (s: IngestSummary) => void;
-  onAddEntity: () => void;
   busy: string;
   message: string | null;
 }) {
@@ -342,35 +459,6 @@ function EmptyState({
         <UploadInspector onIngested={onIngested} />
       </section>
 
-      <section
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          flexWrap: "wrap",
-          paddingTop: 18,
-          borderTop: "1px solid var(--border-muted)",
-          fontSize: 12,
-          color: "var(--fg-dim)",
-        }}
-      >
-        <span>Need to add a single entity manually?</span>
-        <button
-          onClick={onAddEntity}
-          style={{
-            padding: "6px 12px",
-            borderRadius: 6,
-            border: "1px solid var(--border)",
-            background: "var(--bg)",
-            color: "var(--fg)",
-            fontSize: 12,
-            cursor: "pointer",
-            fontFamily: "inherit",
-          }}
-        >
-          + Add entity
-        </button>
-      </section>
 
       {message && (
         <div
@@ -403,6 +491,7 @@ function LoadedDashboard({
   onAskAgent,
   onAddEntity,
   onIngested,
+  onOpenStream,
 }: {
   recs: SandboxRec[];
   summary: SandboxSummary | null;
@@ -412,6 +501,7 @@ function LoadedDashboard({
   onAskAgent: () => void;
   onAddEntity: () => void;
   onIngested: (s: IngestSummary) => void;
+  onOpenStream: (rec: SandboxRec) => void;
 }) {
   const sevColor = (s: SandboxRec["severity"]) =>
     s === "critical"
@@ -567,6 +657,7 @@ function LoadedDashboard({
             {sorted.map((rec) => (
               <div
                 key={rec.id}
+                onClick={() => onOpenStream(rec)}
                 style={{
                   display: "grid",
                   gridTemplateColumns: "4px minmax(220px, 1.2fr) minmax(220px, 1fr) auto",
@@ -574,7 +665,11 @@ function LoadedDashboard({
                   padding: "14px 0",
                   borderBottom: "1px solid var(--border-muted)",
                   alignItems: "start",
+                  cursor: "pointer",
+                  transition: "background 120ms",
                 }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(239,236,229,0.55)")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
               >
                 <div
                   style={{
@@ -608,6 +703,7 @@ function LoadedDashboard({
                 <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" }}>
                   <Link
                     href={`/context/${encodeURIComponent(rec.entity_id)}`}
+                    onClick={(e) => e.stopPropagation()}
                     className="mono"
                     style={{
                       fontSize: 11,

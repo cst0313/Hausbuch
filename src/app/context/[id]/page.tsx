@@ -515,7 +515,15 @@ function FactRow({
         {parsed.value}
         {fact?.valid_from && fact.valid_from !== fact.valid_to && (
           <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", marginLeft: 8 }}>
-            {fact.valid_from.slice(0, 10)}{fact.valid_to ? ` → ${fact.valid_to.slice(0, 10)}` : " →"}
+            {/*
+              valid_to=null means "still true today". The previous render
+              "2024-12-31 →" looked like a broken arrow with no target;
+              spell it as "since 2024-12-31" so a non-technical reader
+              understands it's an open-ended interval.
+            */}
+            {fact.valid_to
+              ? `${fact.valid_from.slice(0, 10)} → ${fact.valid_to.slice(0, 10)}`
+              : `since ${fact.valid_from.slice(0, 10)}`}
           </span>
         )}
       </span>

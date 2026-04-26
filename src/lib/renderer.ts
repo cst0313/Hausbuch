@@ -279,7 +279,7 @@ function conflictBlock(
     const winningFact = v.facts.find((f) => String(f.value) === String(winner.value)) ?? v.facts[0];
     const src = getSource(winningFact.source);
     block.push(
-      `${shortKey(predicate).padEnd(KEY_PAD, " ")}${formatValue(winningFact)} ⚠ conflict (P=${winner.probability.toFixed(2)})  ^[${src?.title ?? winningFact.source}]`,
+      `${shortKey(predicate).padEnd(Math.max(KEY_PAD, shortKey(predicate).length + 2), " ")}${formatValue(winningFact)} ⚠ conflict (P=${winner.probability.toFixed(2)})  ^[${src?.title ?? winningFact.source}]`,
     );
     return block;
   }
@@ -301,7 +301,12 @@ function conflictBlock(
 function renderFactLine(key: string, fact: Fact, detail: Detail): string {
   const src = getSource(fact.source);
   const cite = src?.title ?? fact.source;
-  const pad = key.padEnd(KEY_PAD, " ");
+  // KEY_PAD = 18 was a no-op for predicates whose short-key is already ≥18
+  // chars (e.g. "gebaeudeversicherung" = 20) — the result was the key
+  // concatenated directly to the value: "gebaeudeversicherung234.05".
+  // Floor at key.length + 2 so we always get at least two spaces of
+  // separation regardless of key length.
+  const pad = key.padEnd(Math.max(KEY_PAD, key.length + 2), " ");
   const confMarker = detail >= 5 ? ` (c=${fact.confidence.toFixed(2)})` : "";
 
   // Multi-source corroboration: show how many distinct sources have asserted

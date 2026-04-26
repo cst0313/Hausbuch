@@ -653,9 +653,54 @@ function buildLegalRecommendation(
       // legacy ordering (escalate / dispatch / draft).
       actions: (() => {
         const dispatches = rootCauses ? rootCauseDispatchActions(rootCauses, contractors) : [];
+        // The reply draft. In awaitingReply state we still keep ONE
+        // tenant-facing draft as the primary suggested email — a status
+        // update that says "we're on it, contractor dispatched". Without
+        // this, the dashboard's "suggested email" pane fell back to the
+        // first action with a draft (the dispatch to the contractor),
+        // which read as "Sehr geehrter Herr Jessel, …" where the manager
+        // expected to see what they were sending the tenant.
+        const replyDraft: RecommendedAction = {
+          type: "draft_email",
+          label: awaitingReply
+            ? `Status update to ${entity.name}`
+            : `Respond to ${entity.name}`,
+          label_de: awaitingReply
+            ? `Statusupdate an ${entity.name}`
+            : `Antwort an ${entity.name}`,
+          recipient: {
+            entity_id: entity.id,
+            name: entity.name,
+            email: findFactValue(entity.id, "identity.email") ?? "",
+            role: entity.type,
+          },
+          draft_context: {
+            from: "Huber & Partner Immobilienverwaltung GmbH <info@huber-partner-verwaltung.de>",
+            to: entity.name,
+            to_email: findFactValue(entity.id, "identity.email") ?? "",
+            subject: awaitingReply
+              ? `Statusupdate: Mietminderung — ${entity.name}`
+              : `Re: Mietminderung — ${entity.name}`,
+            incident_summary: awaitingReply
+              ? (causeNames
+                  ? `Statusupdate an den Mieter: Erhalt der Mietminderungs-Ankündigung (${pct}%) wegen ${causeNames} bestätigt. Fachbetrieb ist bereits beauftragt; konkreter Reparaturtermin folgt innerhalb der nächsten Werktage. Höflich, kein Eingeständnis von Verschulden.`
+                  : `Statusupdate an den Mieter: Erhalt der Mietminderungs-Ankündigung (${pct}%) bestätigt. Sachverhalt wird geprüft; konkreter Reparaturtermin folgt innerhalb der nächsten Werktage. Höflich, kein Eingeständnis von Verschulden.`)
+              : (causeNames
+                  ? `Mietminderung ${pct}% angekündigt wegen ${causeNames}. Wir haben den Fachbetrieb beauftragt und kümmern uns umgehend um die Mängelbehebung.`
+                  : `Mietminderung ${pct}% angekündigt wegen Baumängeln. Wir kümmern uns umgehend um die Mängelbehebung.`),
+            entity_context: `Mieter: ${entity.name}. Ankündigung: ${pct}% Minderung.${awaitingReply ? " Wir haben bereits geantwortet — dies ist ein proaktives Statusupdate." : ""}`,
+            language: "de",
+            tone: "formal",
+          },
+        };
+
         if (awaitingReply) {
+          // Tenant-facing status update FIRST (this is what the dashboard
+          // surfaces as "suggested email"), then dispatches, escalation,
+          // and the chase-up follow-up.
           return [
-            ...dispatches, // still actionable even if we already replied
+            replyDraft,
+            ...dispatches,
             {
               type: "escalate",
               label: "Legal review pending",
@@ -668,29 +713,6 @@ function buildLegalRecommendation(
             },
           ] as RecommendedAction[];
         }
-        const replyDraft: RecommendedAction = {
-          type: "draft_email",
-          label: `Respond to ${entity.name}`,
-          label_de: `Antwort an ${entity.name}`,
-          recipient: {
-            entity_id: entity.id,
-            name: entity.name,
-            email: findFactValue(entity.id, "identity.email") ?? "",
-            role: entity.type,
-          },
-          draft_context: {
-            from: "Huber & Partner Immobilienverwaltung GmbH <info@huber-partner-verwaltung.de>",
-            to: entity.name,
-            to_email: findFactValue(entity.id, "identity.email") ?? "",
-            subject: `Re: Mietminderung — ${entity.name}`,
-            incident_summary: causeNames
-              ? `Mietminderung ${pct}% angekündigt wegen ${causeNames}. Wir haben den Fachbetrieb beauftragt.`
-              : `Mietminderung ${pct}% angekündigt wegen Baumängeln.`,
-            entity_context: `Mieter: ${entity.name}. Ankündigung: ${pct}% Minderung.`,
-            language: "de",
-            tone: "formal",
-          },
-        };
         const legalReview: RecommendedAction = {
           type: "escalate",
           label: "Legal review needed",

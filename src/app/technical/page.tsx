@@ -1,10 +1,11 @@
 // path: src/app/technical/page.tsx
 import { Nav } from "@/components/Nav";
+import { CAPABILITIES } from "../research/page";
 
 export const metadata = {
-  title: "Hausbuch — Technical reference",
+  title: "Hausbuch — Docs",
   description:
-    "Engineering reference for Hausbuch: storage model, bitemporality, conflict reconciliation, source citations, cache-engineered rendering, and the partner integration map.",
+    "Product overview for Hausbuch: what each surface does, how data flows from a tenant email all the way to a manager's drafted reply, and the bitemporal storage model behind it.",
 };
 
 export default function TechnicalPage() {
@@ -49,9 +50,41 @@ export default function TechnicalPage() {
           >
             A property manager sees a single document per building. Underneath, every email, PDF,
             invoice, and contract is a stream of bitemporal facts with source citations and
-            Dawid&ndash;Skene posteriors when sources disagree. This page is the engineer&apos;s map.
+            Dawid&ndash;Skene posteriors when sources disagree. This page is the engineer&apos;s map —
+            for the deep-tech foundations behind each design choice see{" "}
+            <a href="/research" style={{ color: "var(--brand)" }}>/research</a>.
           </p>
         </section>
+
+        <Section title="What's in the seeded system" eyebrow="00">
+          <p style={{ fontSize: 15, color: "var(--fg-muted)", lineHeight: 1.65, marginBottom: 16 }}>
+            The hackathon dataset for WEG Immanuelkirchstraße 26 boots into a SQLite file the
+            first time the dev server runs. Everything you see in the dashboard, the agent, and
+            the Context.md pages is derived from these rows — no fixtures, no mocks.
+          </p>
+          <DataShapeGrid />
+        </Section>
+
+        <Section title="Visual workflows" eyebrow="0a">
+          <p style={{ fontSize: 15, color: "var(--fg-muted)", lineHeight: 1.65, marginBottom: 18 }}>
+            Two diagrams render below as inline SVG so they ship with the page itself; the
+            equivalent <code className="mono">.drawio</code> sources live in{" "}
+            <a href="/diagrams/01-architecture.drawio" style={{ color: "var(--brand)" }}>/diagrams/</a>{" "}
+            for editing.
+          </p>
+          <DiagramHeader title="Email trigger — from inbox to drafted reply" subtitle="What happens when a tenant sends an email" />
+          <EmailTriggerDiagram />
+          <DiagramHeader title="UI workflow — a property manager's morning" subtitle="Triage · Act · Investigate · Audit" extraTop={32} />
+          <UiWorkflowDiagram />
+          <p style={{ fontSize: 12, color: "var(--fg-dim)", marginTop: 14 }}>
+            Source files:{" "}
+            <a href="/diagrams/01-architecture.drawio" style={{ color: "var(--brand)" }}>architecture</a>
+            {" · "}
+            <a href="/diagrams/02-email-trigger.drawio" style={{ color: "var(--brand)" }}>email trigger</a>
+            {" · "}
+            <a href="/diagrams/03-ui-workflow.drawio" style={{ color: "var(--brand)" }}>UI workflow</a>
+          </p>
+        </Section>
 
         <Section title="System architecture" eyebrow="01">
           <Architecture />
@@ -188,6 +221,62 @@ contacts.manager.phone  +49 30 0000 0000  ^[Stammdaten]
             <PartnerCard name="Gradium" role="Voice → agent" detail="WebSocket ASR at wss://api.gradium.ai/api/speech/asr. The ⌘K palette captures PCM at 24 kHz mono and streams 80 ms chunks; the agent answers as if typed." />
             <PartnerCard name="Aikido" role="Supply-chain scan" detail="GitHub Action runs npm audit on every push; weekly Aikido report." />
             <PartnerCard name="Anthropic" role="Optional adapter" detail="Claude is the alt composer when Gemini is unavailable; same prompt-cache contract." />
+          </div>
+        </Section>
+
+        <Section title="What's actually built" eyebrow="07b">
+          <p style={{ fontSize: 15, color: "var(--fg-muted)", lineHeight: 1.65, marginBottom: 16 }}>
+            Capability index — every entry maps to a real code path, updated when behavior
+            changes (not when slides do). Numbers and benchmarks for the perf entries are on{" "}
+            <a href="/research" style={{ color: "var(--brand)" }}>/research</a>.
+          </p>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+              gap: 12,
+            }}
+          >
+            {CAPABILITIES.map((c) => (
+              <div
+                key={c.title}
+                style={{
+                  padding: "16px 18px",
+                  background: "var(--bg-elevated)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 10,
+                }}
+              >
+                <div
+                  className="mono"
+                  style={{
+                    fontSize: 10,
+                    color: "var(--brand)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.08em",
+                    marginBottom: 6,
+                  }}
+                >
+                  {c.stage}
+                </div>
+                <div
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 500,
+                    letterSpacing: "-0.005em",
+                    marginBottom: 6,
+                  }}
+                >
+                  {c.title}
+                </div>
+                <div style={{ fontSize: 12.5, color: "var(--fg-muted)", lineHeight: 1.55 }}>
+                  {c.body}
+                </div>
+                <div className="mono" style={{ marginTop: 10, fontSize: 10.5, color: "var(--fg-dim)" }}>
+                  {c.location}
+                </div>
+              </div>
+            ))}
           </div>
         </Section>
 
@@ -944,6 +1033,394 @@ function Arrow({
       stroke={brand ? "var(--brand)" : "var(--fg-dim)"}
       strokeWidth={brand ? 1.5 : 1}
       markerEnd={brand ? "url(#arrBrand)" : "url(#arr)"}
+    />
+  );
+}
+
+// ── Data shape grid: live counts of what's seeded ─────────────────────────
+
+function DataShapeGrid() {
+  const items: Array<{ count: string; label: string; sublabel?: string }> = [
+    { count: "133", label: "entities", sublabel: "1 WEG · 3 buildings · 52 units · 35 owners · 26 tenants · 16 contractors" },
+    { count: "16,874", label: "facts", sublabel: "bitemporal · append-only · cited" },
+    { count: "8,677", label: "sources", sublabel: "6,546 emails + 339 PDFs + 1,619 bank txns + stammdaten" },
+    { count: "224", label: "live recommendations", sublabel: "across incidents, legal, financial — generated, not curated" },
+  ];
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+        gap: 12,
+      }}
+    >
+      {items.map((item) => (
+        <div
+          key={item.label}
+          style={{
+            padding: "18px 20px",
+            background: "var(--bg-elevated)",
+            border: "1px solid var(--border)",
+            borderRadius: 10,
+          }}
+        >
+          <div
+            className="mono"
+            style={{
+              fontSize: 11,
+              color: "var(--fg-dim)",
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+              marginBottom: 6,
+            }}
+          >
+            {item.label}
+          </div>
+          <div
+            style={{
+              fontSize: 28,
+              fontWeight: 500,
+              letterSpacing: "-0.02em",
+              fontFeatureSettings: '"tnum"',
+              lineHeight: 1.05,
+            }}
+          >
+            {item.count}
+          </div>
+          {item.sublabel && (
+            <div style={{ marginTop: 8, fontSize: 12, color: "var(--fg-muted)", lineHeight: 1.5 }}>
+              {item.sublabel}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DiagramHeader({
+  title,
+  subtitle,
+  extraTop,
+}: {
+  title: string;
+  subtitle: string;
+  extraTop?: number;
+}) {
+  return (
+    <div style={{ marginTop: extraTop ?? 8, marginBottom: 12 }}>
+      <div
+        style={{
+          fontSize: 16,
+          fontWeight: 500,
+          letterSpacing: "-0.01em",
+        }}
+      >
+        {title}
+      </div>
+      <div
+        className="mono"
+        style={{
+          marginTop: 4,
+          fontSize: 11,
+          color: "var(--fg-dim)",
+          textTransform: "uppercase",
+          letterSpacing: "0.08em",
+        }}
+      >
+        {subtitle}
+      </div>
+    </div>
+  );
+}
+
+// ── Email trigger workflow (mirrors docs/diagrams/02-email-trigger.drawio) ─
+
+function EmailTriggerDiagram() {
+  // Wider canvas (1140 x 320) so each step has room for two-line labels.
+  // Coloring follows the same convention as the architecture SVG above.
+  return (
+    <div
+      style={{
+        padding: 20,
+        background: "var(--bg-elevated)",
+        border: "1px solid var(--border)",
+        borderRadius: 12,
+        overflow: "auto",
+      }}
+    >
+      <svg viewBox="0 0 1140 360" width="100%" style={{ display: "block", maxWidth: 1140 }}>
+        <defs>
+          <marker id="arr2" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+            <path d="M0,0 L10,5 L0,10" fill="var(--fg-dim)" />
+          </marker>
+          <marker id="arr2Brand" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+            <path d="M0,0 L10,5 L0,10" fill="var(--brand)" />
+          </marker>
+        </defs>
+
+        <FlowStep x={20} y={28} w={210} h={84} num="1" title="Tenant email arrives" body="Wasser tropft aus der Decke — from edeltraud.renner@web.de" />
+        <FlowStep x={250} y={28} w={170} h={84} num="2" title="Header parse" body="from / to · subject · UTF-8 decode" />
+        <FlowStep x={440} y={28} w={170} h={84} num="3" title="Entity routing" body="incoming → sender · stammdaten lookup" />
+        <FlowStep x={630} y={28} w={170} h={84} num="4" title="Incident classify" body="regex multi-match scorer · subject wins" />
+        <FlowStep x={820} y={28} w={170} h={84} num="4a" title="LLM fallback" body="Gemini classifier when keywords miss" dashed />
+
+        <FlowStep x={820} y={146} w={170} h={84} num="5" title="Fact write" body="incident.type + status · append-only · cited" />
+        <FlowStep x={630} y={146} w={170} h={84} num="6" title="Reconciliation" body="Dawid–Skene · prior × recency" />
+        <FlowStep x={440} y={146} w={170} h={84} num="7" title="Awaiting-reply detect" body="outbound after sinceIso → collapse to follow-up" />
+        <FlowStep x={20} y={146} w={400} h={84} num="8" title="Recommendation build" body="severity · root-cause scan · email_chain · pre-composed reply draft" />
+
+        <FlowStep x={20} y={264} w={520} h={70} num="9" title="UI surface" body="dashboard rec row · severity tick · step indicator · prefetch on hover" tone="user" />
+        <FlowStep x={560} y={264} w={430} h={70} num="10" title="Manager actions" body="Send draft → outbound source · Dispatch → contractor email · Resolve → fact append" tone="user" />
+
+        {/* Top row arrows */}
+        <Arrow2 x1={230} y1={70} x2={250} y2={70} />
+        <Arrow2 x1={420} y1={70} x2={440} y2={70} />
+        <Arrow2 x1={610} y1={70} x2={630} y2={70} />
+        <Arrow2 x1={800} y1={70} x2={820} y2={70} />
+
+        {/* 4 → 4a (dashed bridge) and 4 → 5 main */}
+        <Arrow2 x1={905} y1={112} x2={905} y2={146} />
+
+        {/* Middle row arrows (right to left) */}
+        <Arrow2 x1={820} y1={188} x2={800} y2={188} />
+        <Arrow2 x1={630} y1={188} x2={610} y2={188} />
+        <Arrow2 x1={440} y1={188} x2={420} y2={188} />
+
+        {/* Middle → bottom row */}
+        <Arrow2 x1={220} y1={230} x2={220} y2={264} brand />
+
+        {/* UI → actions */}
+        <Arrow2 x1={540} y1={299} x2={560} y2={299} />
+
+        {/* Feedback loop: actions → step 1 (outbound becomes a new email source) */}
+        <path
+          d="M780,264 Q780,200 130,140 Q120,90 125,112"
+          stroke="var(--brand)"
+          strokeWidth="1.4"
+          strokeDasharray="3 3"
+          fill="none"
+          markerEnd="url(#arr2Brand)"
+        />
+        <text x={780} y={210} fontSize="10" fill="var(--brand)" fontFamily="var(--font-mono)" letterSpacing="0.04em">
+          outbound = next email source · ⑦ flips
+        </text>
+      </svg>
+    </div>
+  );
+}
+
+// ── UI workflow swimlanes (mirrors docs/diagrams/03-ui-workflow.drawio) ────
+
+function UiWorkflowDiagram() {
+  const lanes: Array<{ heading: string; items: string[] }> = [
+    {
+      heading: "A · Triage  /dashboard",
+      items: [
+        "Live stat strip · 8s poll",
+        "Recs sorted by severity",
+        "Awaiting-reply rows muted",
+        "Click row → expand",
+        "Resolve → fact append",
+      ],
+    },
+    {
+      heading: "B · Act  draft · dispatch · escalate",
+      items: [
+        "Pre-composed reply (sessionStorage cache)",
+        "Edit before send · pinned to tenant Sprache",
+        "Dispatch contractor → branche-routed",
+        "Escalate (legal) → suspend auto-actions",
+        "Every action lands in /audit",
+      ],
+    },
+    {
+      heading: "C · Investigate  ⌘K · Context.md · sandbox",
+      items: [
+        "⌘K palette · 3-deep history",
+        "Agent loads ≤ 24KB Context per entity",
+        "Cited answer · ^[source title]",
+        "/context/[entity] anchored Markdown",
+        "Drop a doc → /sandbox · facts land live",
+      ],
+    },
+    {
+      heading: "D · Audit  verify · replay",
+      items: [
+        "/audit append-only ledger",
+        "/research deep-tech foundations",
+        "/technical (this page) — engineering map",
+        "Replay a date · valid / known time travel",
+        "Voice mode · Gradium ASR",
+      ],
+    },
+  ];
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+        gap: 12,
+      }}
+    >
+      {lanes.map((lane) => (
+        <div
+          key={lane.heading}
+          style={{
+            padding: "16px 18px",
+            background: "var(--bg-elevated)",
+            border: "1px solid var(--border)",
+            borderRadius: 10,
+          }}
+        >
+          <div
+            className="mono"
+            style={{
+              fontSize: 10,
+              color: "var(--brand)",
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+              marginBottom: 10,
+            }}
+          >
+            {lane.heading}
+          </div>
+          <ol
+            style={{
+              listStyle: "none",
+              padding: 0,
+              margin: 0,
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+            }}
+          >
+            {lane.items.map((item, i) => (
+              <li
+                key={item}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "20px 1fr",
+                  gap: 8,
+                  alignItems: "baseline",
+                  fontSize: 12.5,
+                  color: "var(--fg-muted)",
+                  lineHeight: 1.5,
+                }}
+              >
+                <span
+                  className="mono"
+                  style={{
+                    fontSize: 10,
+                    color: "var(--fg-dim)",
+                  }}
+                >
+                  {String(i + 1).padStart(2, "0")}
+                </span>
+                <span>{item}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function FlowStep({
+  x,
+  y,
+  w,
+  h,
+  num,
+  title,
+  body,
+  dashed,
+  tone,
+}: {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  num: string;
+  title: string;
+  body: string;
+  dashed?: boolean;
+  tone?: "user";
+}) {
+  const fill = tone === "user" ? "var(--bg)" : "var(--bg-elevated)";
+  const stroke = tone === "user" ? "var(--brand)" : "var(--border)";
+  return (
+    <g>
+      <rect
+        x={x}
+        y={y}
+        width={w}
+        height={h}
+        rx={8}
+        ry={8}
+        fill={fill}
+        stroke={stroke}
+        strokeWidth={1}
+        strokeDasharray={dashed ? "4 3" : undefined}
+      />
+      <text
+        x={x + 12}
+        y={y + 18}
+        fontSize="10"
+        fill="var(--brand)"
+        fontFamily="var(--font-mono)"
+        letterSpacing="0.04em"
+      >
+        {num}
+      </text>
+      <text
+        x={x + 12}
+        y={y + 38}
+        fontSize="13"
+        fill="var(--fg)"
+        fontWeight={500}
+      >
+        {title}
+      </text>
+      <foreignObject x={x + 12} y={y + 46} width={w - 24} height={h - 50}>
+        <div
+          style={{
+            fontSize: 11,
+            color: "var(--fg-muted)",
+            lineHeight: 1.4,
+            fontFamily: "var(--font-sans)",
+          }}
+        >
+          {body}
+        </div>
+      </foreignObject>
+    </g>
+  );
+}
+
+function Arrow2({
+  x1,
+  y1,
+  x2,
+  y2,
+  brand,
+}: {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  brand?: boolean;
+}) {
+  return (
+    <line
+      x1={x1}
+      y1={y1}
+      x2={x2}
+      y2={y2}
+      stroke={brand ? "var(--brand)" : "var(--fg-dim)"}
+      strokeWidth={brand ? 1.5 : 1}
+      markerEnd={brand ? "url(#arr2Brand)" : "url(#arr2)"}
     />
   );
 }

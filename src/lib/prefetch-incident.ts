@@ -75,7 +75,11 @@ export function prefetchIncident(rec: RecForPrefetch): void {
   // 2. Pre-compose the reply draft. Hits Gemini (~600ms), but the result
   //    lands in sessionStorage at exactly the key StreamPanel reads from,
   //    so when the user clicks the row the panel paints instantly.
-  const draftAction = rec.actions?.find((a) => a.type === "draft_email" && a.draft_context);
+  // Prefetch the tenant-facing reply, never the contractor dispatch — must
+  // match StreamPanel's selection rule exactly so the cache hit lands.
+  const draftAction =
+    rec.actions?.find((a) => a.type === "draft_email" && a.draft_context) ??
+    rec.actions?.find((a) => a.draft_context);
   const ctx = draftAction?.draft_context;
   if (ctx) {
     const cacheKey = `hausbuch:draft:${hashKey(JSON.stringify(ctx))}`;

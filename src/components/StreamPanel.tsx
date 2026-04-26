@@ -126,7 +126,15 @@ export function StreamPanel({
       })
       .catch(() => {});
 
-    const draftAction = rec.actions.find((a) => a.draft_context);
+    // The suggested email surfaced in the panel is the TENANT-facing reply,
+    // not the contractor dispatch. Both actions can carry a draft_context,
+    // so we prefer type === "draft_email" first; fall back to any draft only
+    // if no draft_email exists. Otherwise a Mietminderung rec showed the
+    // "Sehr geehrter Herr Jessel" dispatch text where the manager expected
+    // "we'll deal with it" to the tenant.
+    const draftAction =
+      rec.actions.find((a) => a.type === "draft_email" && a.draft_context) ??
+      rec.actions.find((a) => a.draft_context);
     if (draftAction?.draft_context) {
       // Cache the draft in sessionStorage keyed by the full draft context.
       // Re-opening the same incident in the same session never re-bills Gemini.

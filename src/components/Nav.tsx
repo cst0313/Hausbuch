@@ -9,8 +9,8 @@ import { useLocale } from "./LocaleProvider";
 const PRIMARY = [
   { href: "/dashboard", key: "nav.dashboard" },
   { href: "/sandbox", key: "nav.sandbox" },
-  { href: "/research", key: "nav.research" },
   { href: "/technical", key: "nav.docs" },
+  { href: "/research", key: "nav.research" },
 ];
 
 export function Nav({

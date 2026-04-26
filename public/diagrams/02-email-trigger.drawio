@@ -1,0 +1,92 @@
+<mxfile host="app.diagrams.net" modified="2026-04-25T00:00:00.000Z" agent="hausbuch" version="22.0.0">
+  <diagram id="trigger" name="Email Trigger Workflow">
+    <mxGraphModel dx="1422" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="Email Trigger — From Inbox to Recommended Action" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=22;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Tenant sends email → Hausbuch parses, classifies, routes, reconciles → Property manager sees one rec with a draft reply" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=12;fontStyle=2" vertex="1" parent="1">
+          <mxGeometry x="40" y="60" width="1100" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- Step 1: Email arrives -->
+        <mxCell id="s1" value="① TENANT SENDS EMAIL&#xa;Subject: &quot;Wasser tropft aus der Decke&quot;&#xa;From: edeltraud.renner@web.de&#xa;Body: report of leak in WE 21" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;verticalAlign=top;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="280" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Step 2: Header parse -->
+        <mxCell id="s2" value="② HEADER PARSE&#xa;parseEmailHeaders():&#xa;  from_email · to_email&#xa;  subject (decoded UTF-8)&#xa;  date → ISO" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;verticalAlign=top;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="380" y="100" width="220" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Step 3: Entity routing -->
+        <mxCell id="s3" value="③ ENTITY ROUTING&#xa;direction=incoming&#xa;  → entity = sender&#xa;direction=outgoing&#xa;  → entity = recipient&#xa;Lookup against stammdaten" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;verticalAlign=top;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="660" y="100" width="220" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- Step 4: Classify -->
+        <mxCell id="s4" value="④ INCIDENT CLASSIFY&#xa;PATTERNS regex array&#xa;score per type, pick top&#xa;Subject-match overrides body" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;verticalAlign=top;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="940" y="100" width="220" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Step 4b: LLM fallback -->
+        <mxCell id="s4b" value="④a LLM FALLBACK&#xa;If category=Schaden/Mangel&#xa;but score=0 →&#xa;classifyEmailIncident()&#xa;asks Gemini for a type" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;verticalAlign=top;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="940" y="240" width="220" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Step 5: Fact write -->
+        <mxCell id="s5" value="⑤ FACT WRITE (append-only)&#xa;incident.type = &quot;water_damage&quot;&#xa;incident.status = &quot;reported&quot;&#xa;Source row with raw_excerpt,&#xa;direction, thread_id, category" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;verticalAlign=top;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="940" y="380" width="220" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- Step 6: Reconcile -->
+        <mxCell id="s6" value="⑥ RECONCILIATION&#xa;Dawid–Skene weights conflicting&#xa;facts by source_prior + recency&#xa;→ Edeltraud's WE 21 status&#xa;canonicalized" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;verticalAlign=top;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="660" y="380" width="220" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- Step 7: Awaiting reply -->
+        <mxCell id="s7" value="⑦ AWAITING-REPLY DETECT&#xa;isAwaitingReply(entity, sinceIso):&#xa;most recent OUTGOING after sinceIso&#xa;and no newer INBOUND ⇒ collapse&#xa;rec into &quot;Sent · awaiting reply&quot;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;verticalAlign=top;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="380" y="380" width="220" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- Step 8: Recommendation -->
+        <mxCell id="s8" value="⑧ RECOMMENDATION BUILD&#xa;buildIncidentRecommendation():&#xa;• severity scoring (water=high)&#xa;• actions: dispatch_contractor,&#xa;  draft_email, escalate, follow_up&#xa;• email_chain from same source IDs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;verticalAlign=top;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="40" y="380" width="280" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- Step 9: UI -->
+        <mxCell id="s9" value="⑨ UI SURFACE&#xa;Dashboard polls /api/recommendations every 5s&#xa;New row appears with:&#xa;  ⚠ Water damage — Edeltraud Renner (WE 21) [HIGH]&#xa;  Step 1: Tenant reported · Step 2: Dispatch Sanitär Schulze&#xa;  Step 3: Draft reply (pre-composed by Gemini)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;verticalAlign=top;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="40" y="580" width="540" height="140" as="geometry" />
+        </mxCell>
+
+        <!-- Step 10: Actions -->
+        <mxCell id="s10" value="⑩ MANAGER ACTIONS&#xa;Click &quot;Send draft&quot; → outbound email written as new Source&#xa;  with direction=outgoing → step ⑦ flips on next cycle&#xa;Click &quot;Dispatch&quot; → contractor email + audit log entry&#xa;Click &quot;Resolve&quot; → fact incident.status=&quot;resolved&quot; appended" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;verticalAlign=top;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="620" y="580" width="540" height="140" as="geometry" />
+        </mxCell>
+
+        <!-- arrows -->
+        <mxCell id="a1" style="endArrow=classic;html=1;strokeWidth=2" edge="1" parent="1" source="s1" target="s2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a2" style="endArrow=classic;html=1;strokeWidth=2" edge="1" parent="1" source="s2" target="s3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a3" style="endArrow=classic;html=1;strokeWidth=2" edge="1" parent="1" source="s3" target="s4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a4" style="endArrow=classic;html=1;strokeWidth=2;dashed=1" edge="1" parent="1" source="s4" target="s4b"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a5" style="endArrow=classic;html=1;strokeWidth=2" edge="1" parent="1" source="s4" target="s5"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a5b" style="endArrow=classic;html=1;strokeWidth=2;dashed=1" edge="1" parent="1" source="s4b" target="s5"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a6" style="endArrow=classic;html=1;strokeWidth=2" edge="1" parent="1" source="s5" target="s6"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a7" style="endArrow=classic;html=1;strokeWidth=2" edge="1" parent="1" source="s6" target="s7"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a8" style="endArrow=classic;html=1;strokeWidth=2" edge="1" parent="1" source="s7" target="s8"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a9" style="endArrow=classic;html=1;strokeWidth=2" edge="1" parent="1" source="s8" target="s9"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a10" style="endArrow=classic;html=1;strokeWidth=2" edge="1" parent="1" source="s9" target="s10"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- feedback loop -->
+        <mxCell id="loop" value="feedback: outbound becomes input → ⑦ flips to &quot;awaiting reply&quot;" style="endArrow=classic;html=1;strokeColor=#b85450;strokeWidth=2;dashed=1;exitX=1;exitY=0.5;entryX=0.1;entryY=1;curved=1" edge="1" parent="1" source="s10" target="s1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

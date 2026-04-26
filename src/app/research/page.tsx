@@ -58,7 +58,9 @@ const RUNTIME: Array<{
   },
 ];
 
-const CAPABILITIES: Array<{ stage: string; title: string; body: string; location: string }> = [
+// CAPABILITIES — kept exported for /technical to render. Each entry maps to
+// a real code path and updates when behavior changes (not when slides do).
+export const CAPABILITIES: Array<{ stage: string; title: string; body: string; location: string }> = [
   {
     stage: "ingest",
     title: "Multi-format extraction",
@@ -214,59 +216,86 @@ export default function ResearchPage() {
             className="font-serif leading-[0.98] tracking-tight mb-8"
             style={{ fontSize: "clamp(2.5rem, 6vw, 4.5rem)" }}
           >
-            What the system <span className="italic" style={{ color: "var(--amber-bright)" }}>actually does</span>, today.
+            The <span className="italic" style={{ color: "var(--amber-bright)" }}>theoretical roots</span> behind every design choice.
           </h1>
           <p
             className="max-w-2xl text-[17px] leading-relaxed"
             style={{ color: "var(--ink-muted)" }}
           >
-            A working report on the deployed pipeline — what each stage of the system
-            costs in latency, what technique buys us that latency, and the prior work
-            grounding each decision.
+            Hausbuch is a thin engineering layer over four decades of database and ML
+            research. This page maps each subsystem to the paper that argues it should
+            exist, the open problem it sidesteps, and the runtime cost we measured. For
+            an overview of what the product does and the system architecture, see{" "}
+            <a href="/technical" style={{ color: "var(--amber-bright)" }}>/docs</a>.
           </p>
         </section>
 
-        {/* Current capabilities — what the live pipeline does */}
+        {/* Theoretical foundations — five claims with citations */}
         <section className="max-w-6xl mx-auto px-6 py-12">
           <div
             className="text-[11px] font-mono tracking-widest uppercase mb-6"
             style={{ color: "var(--ink-dim)" }}
           >
-            / current capabilities
+            / foundations
           </div>
           <h2 className="font-serif text-3xl md:text-4xl mb-6 leading-tight">
-            The pipeline running <span className="italic" style={{ color: "var(--amber-bright)" }}>right now</span>.
+            Five claims, each with a <span className="italic" style={{ color: "var(--amber-bright)" }}>citation</span>.
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {CAPABILITIES.map((c) => (
+          <div className="grid grid-cols-1 gap-3">
+            {[
+              {
+                claim: "A property-management database needs two time axes, not one.",
+                cite: "Snodgrass '99 — Developing Time-Oriented Database Applications in SQL",
+                why: "valid_time answers \"what was the rent in March?\". transaction_time answers \"what did we know on April 15?\". Collapsing both into updated_at silently destroys the ability to defend a past decision in court — the most-asked question in a Mietminderung dispute.",
+              },
+              {
+                claim: "When two sources disagree, you need a posterior, not a tiebreaker.",
+                cite: "Dawid & Skene '79 — MLE of Observer Error-Rates via EM",
+                why: "Given N noisy observers, EM recovers each observer's reliability and the true label simultaneously. Hausbuch uses a single-step variant with source-trust priors — converges on convex priors without iteration. Renders P(value)=0.86 inline so the manager can see the disagreement, not just the winner.",
+              },
+              {
+                claim: "LLMs forget the middle of long contexts, so keep contexts short.",
+                cite: "Liu et al. '24 — Lost in the Middle (ACL 2024)",
+                why: "U-shaped attention: facts at start/end retained, middle lost. Confirmed for every frontier model tested. Hausbuch's detail=3 render targets ~2K tokens (well inside the sweet spot); detail=1 targets ~400 tokens for cross-references. Measured −97% token reduction at detail=1 vs the naive structured render.",
+              },
+              {
+                claim: "Citations belong in storage, not in generation.",
+                cite: "Asai et al. '23 — Self-RAG · Johnson et al. '93 — Source Monitoring",
+                why: "Models trained to emit citations are measurably more factual; humans hold beliefs accountable through source monitoring. Hausbuch enforces span-citation at the fact level, so every Markdown line surfaces ^[source title] for free. Generation cannot cite a source the storage layer doesn't already know.",
+              },
+              {
+                claim: "Cache-stable prefixes turn a 5-minute prompt cache into 90% cost reduction.",
+                cite: "Anthropic '24 — Prompt Caching · Park et al. '23 — Generative Agents",
+                why: "Hausbuch's renderer produces append-only output with a fixed section order, padded keys, and volatile sections shoved to the bottom. Anthropic's 5-min cache TTL hits 90% on follow-up questions with the same Context.md prefix. Measured: byte-identical output for byte-identical inputs is the only path to a real cache.",
+              },
+            ].map((claim) => (
               <div
-                key={c.title}
+                key={claim.cite}
                 className="p-5 rounded-lg"
                 style={{ background: "var(--bg-raised)", border: "1px solid var(--line)" }}
               >
                 <div
-                  className="font-mono text-[10px] uppercase tracking-wider mb-2"
-                  style={{ color: "var(--amber-bright)" }}
-                >
-                  {c.stage}
-                </div>
-                <div
-                  className="text-[15px] font-medium mb-2"
+                  className="text-[16px] font-medium leading-snug mb-2"
                   style={{ letterSpacing: "-0.01em" }}
                 >
-                  {c.title}
+                  {claim.claim}
                 </div>
-                <div className="text-[13px] leading-relaxed" style={{ color: "var(--ink-muted)" }}>
-                  {c.body}
+                <div
+                  className="font-mono text-[11px] uppercase tracking-wider mb-3"
+                  style={{ color: "var(--amber-bright)" }}
+                >
+                  {claim.cite}
                 </div>
-                <div className="mt-3 font-mono text-[11px]" style={{ color: "var(--ink-dim)" }}>
-                  {c.location}
+                <div
+                  className="text-[13px] leading-relaxed"
+                  style={{ color: "var(--ink-muted)" }}
+                >
+                  {claim.why}
                 </div>
               </div>
             ))}
           </div>
         </section>
-
 
         {/* Runtime characteristics — per-stage latency and the technique used */}
         <section className="max-w-6xl mx-auto px-6 py-16">

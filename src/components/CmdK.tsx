@@ -161,9 +161,13 @@ export function CmdK({
     };
   }, [query, open, agentMode]);
 
-  const askAgent = () => {
-    const q = query.trim();
+  // Accept an optional explicit question so callers (suggested-question
+  // chips, recent list) can fire WITHOUT waiting for React to flush
+  // setQuery's state update. Falls back to `query` for the keyboard path.
+  const askAgent = (override?: string) => {
+    const q = (override ?? query).trim();
     if (!q) return;
+    if (override !== undefined) setQuery(override);
     rememberQuery(q);
     setAgentMode(true);
     setAgentLoading(true);
@@ -525,11 +529,7 @@ export function CmdK({
                   {recent.slice(0, 3).map((q, i) => (
                     <button
                       key={`${q}-${i}`}
-                      onClick={() => {
-                        setQuery(q);
-                        // Re-run immediately — saves the user a keystroke.
-                        setTimeout(() => askAgent(), 30);
-                      }}
+                      onClick={() => askAgent(q)}
                       style={{
                         display: "grid",
                         gridTemplateColumns: "20px 1fr auto",
@@ -619,10 +619,7 @@ export function CmdK({
               ].map((q) => (
                 <button
                   key={q}
-                  onClick={() => {
-                    setQuery(q);
-                    setTimeout(() => askAgent(), 30);
-                  }}
+                  onClick={() => askAgent(q)}
                   style={{
                     padding: "8px 10px",
                     border: "1px solid var(--border-muted)",
@@ -986,10 +983,7 @@ export function CmdK({
                             const followUp = s.detail
                               ? `${s.label} — ${s.detail}`
                               : s.label;
-                            setQuery(followUp);
-                            // Re-run the agent with the suggestion as the
-                            // question so the user gets the next breakdown.
-                            setTimeout(() => askAgent(), 30);
+                            askAgent(followUp);
                           }}
                           title={s.detail ?? s.label}
                           style={{

@@ -2,6 +2,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Nav } from "@/components/Nav";
 import { useLocale } from "@/components/LocaleProvider";
@@ -21,8 +22,20 @@ type LiveStats = {
 
 export default function Home() {
   const { t } = useLocale();
+  const router = useRouter();
   const titleLines = t("hero.title").split("\n");
   const [stats, setStats] = useState<LiveStats | null>(null);
+
+  // Route prefetch — Next.js's App Router only prefetches Link components
+  // currently in the viewport. Force-prefetch the four heavy primary
+  // surfaces so the user clicking a CTA from anywhere on the home page
+  // lands instantly.
+  useEffect(() => {
+    router.prefetch("/dashboard");
+    router.prefetch("/sandbox");
+    router.prefetch("/graph");
+    router.prefetch("/technical");
+  }, [router]);
 
   useEffect(() => {
     let cancelled = false;

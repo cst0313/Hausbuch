@@ -1,19 +1,8 @@
 // path: src/app/graph/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import {
-  ReactFlow,
-  Background,
-  Controls,
-  MiniMap,
-  Position,
-  type Node,
-  type Edge,
-  type NodeMouseHandler,
-} from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
 import { Nav } from "@/components/Nav";
 
 type GraphNode = {
@@ -48,29 +37,38 @@ type GraphPayload = {
   };
 };
 
+// Brand-aligned palette. Light enough to read on either theme.
 const TYPE_COLOR: Record<string, string> = {
-  weg: "#c08040",
+  weg: "#c5803c",         // brand
   building: "#b86b3a",
-  unit: "#9aa6c7",
-  tenant: "#5fa07a",
+  unit: "#94a3b8",
+  tenant: "#5b9b7a",
   owner: "#a07ac0",
   contractor: "#7a8aa0",
 };
 
-// Column x-positions for the layered layout. We compute y per node to spread
-// each column's contents top-to-bottom and to align tenants with their unit.
-const COL_X = {
-  weg: 0,
-  building: 280,
-  unit: 560,
-  person: 880,
-  contractor: 1180,
+const EDGE_COLOR: Record<string, string> = {
+  parent: "#cbd5e1",
+  tenancy: "#5b9b7a",
+  ownership: "#a07ac0",
 };
+
+const LAYOUT_OPTIONS = [
+  { value: "force", label: "Force-directed" },
+  { value: "dagre", label: "Hierarchical" },
+  { value: "radial", label: "Radial" },
+  { value: "concentric", label: "Concentric" },
+] as const;
+
+type LayoutKey = (typeof LAYOUT_OPTIONS)[number]["value"];
 
 export default function GraphPage() {
   const [data, setData] = useState<GraphPayload | null>(null);
   const [filterType, setFilterType] = useState<string | null>(null);
   const [hovered, setHovered] = useState<GraphNode | null>(null);
+  const [layout, setLayout] = useState<LayoutKey>("force");
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const graphRef = useRef<unknown | null>(null);
 
   useEffect(() => {
     fetch("/api/graph")
@@ -79,17 +77,162 @@ export default function GraphPage() {
       .catch(() => setData(null));
   }, []);
 
-  const { nodes, edges } = useMemo(() => buildFlowGraph(data, filterType), [data, filterType]);
+  const byId = useMemo(() => {
+    const m = new Map<string, GraphNode>();
+    if (data) for (const n of data.nodes) m.set(n.id, n);
+    return m;
+  }, [data]);
 
-  const onNodeClick: NodeMouseHandler = (_e, node) => {
-    const id = node.id;
-    window.location.href = `/context/${encodeURIComponent(id)}`;
-  };
-  const onNodeMouseEnter: NodeMouseHandler = (_e, node) => {
-    const original = data?.nodes.find((n) => n.id === node.id) ?? null;
-    setHovered(original);
-  };
-  const onNodeMouseLeave: NodeMouseHandler = () => setHovered(null);
+  // Mount / re-mount the graph whenever data, layout, or filter changes.
+  useEffect(() => {
+    if (!data || !containerRef.current) return;
+
+    let cancelled = false;
+    let graph: { destroy?: () => void } | null = null;
+
+    (async () => {
+      // Dynamic import keeps G6 (canvas/SSR-incompatible) out of the
+      // server bundle. Next.js App Router will tree-shake it correctly.
+      const G6 = await import("@antv/g6");
+      if (cancelled || !containerRef.current) return;
+
+      // Build G6 data: filter dims by mutating the rendered style, not by
+      // dropping nodes — judges keep their visual orientation.
+      const nodes = data.nodes.map((n) => {
+        const dim = filterType !== null && filterType !== n.type;
+        const open = n.open_incidents > 0;
+        const radius = sizeFor(n.type);
+        return {
+          id: n.id,
+          data: {
+            ...n,
+            dim,
+            open,
+          },
+          style: {
+            // Visual radius / fill / stroke / label
+            size: radius,
+            fill: open ? "rgba(220,80,60,0.18)" : TYPE_COLOR[n.type] + "33",
+            stroke: open ? "#dc5040" : TYPE_COLOR[n.type],
+            lineWidth: open ? 2 : 1.4,
+            opacity: dim ? 0.18 : 1,
+            labelText: labelFor(n),
+            labelPlacement: "bottom" as const,
+            labelFontSize: n.type === "weg" ? 14 : n.type === "building" ? 12 : 10,
+            labelFontWeight: n.type === "weg" ? 600 : 400,
+            labelFill: "#1a1a1a",
+            labelOpacity: dim ? 0.18 : 1,
+            cursor: "pointer" as const,
+          },
+        };
+      });
+
+      const edges = data.edges.map((e, i) => {
+        const fromDim = filterType !== null && (byId.get(e.from)?.type ?? "") !== filterType;
+        const toDim = filterType !== null && (byId.get(e.to)?.type ?? "") !== filterType;
+        const dim = fromDim && toDim;
+        return {
+          id: `e${i}-${e.from}-${e.to}`,
+          source: e.from,
+          target: e.to,
+          data: { kind: e.kind },
+          style: {
+            stroke: EDGE_COLOR[e.kind],
+            lineWidth: e.kind === "parent" ? 1.2 : 0.8,
+            opacity: dim ? 0.04 : e.kind === "parent" ? 0.55 : 0.45,
+            endArrow: e.kind === "parent",
+            endArrowSize: 4,
+          },
+        };
+      });
+
+      // Layout config per chosen mode. G6 v5 picks reasonable defaults but
+      // these tunings keep the dataset (~133 nodes) readable.
+      const layoutConfig =
+        layout === "force"
+          ? {
+              type: "force",
+              preventOverlap: true,
+              nodeSize: 32,
+              linkDistance: (edge: { data?: { kind: string } }) =>
+                edge.data?.kind === "parent" ? 80 : 110,
+              nodeStrength: -120,
+              edgeStrength: 0.55,
+              animation: true,
+            }
+          : layout === "dagre"
+            ? {
+                type: "dagre",
+                rankdir: "LR",
+                nodesep: 14,
+                ranksep: 60,
+              }
+            : layout === "radial"
+              ? {
+                  type: "radial",
+                  unitRadius: 110,
+                  preventOverlap: true,
+                  nodeSize: 30,
+                  focusNode: data.nodes.find((n) => n.type === "weg")?.id,
+                }
+              : {
+                  type: "concentric",
+                  preventOverlap: true,
+                  nodeSize: 30,
+                  // Concentric ordering: WEG center, buildings inner ring,
+                  // units mid, people outer.
+                  sortBy: (n: { data: { type: string } }) =>
+                    ({ weg: 5, building: 4, unit: 3, contractor: 2, tenant: 1, owner: 1 }[n.data.type] ?? 0),
+                };
+
+      const Graph = (G6 as unknown as { Graph: new (cfg: object) => { destroy?: () => void; render: () => Promise<void>; on: (e: string, cb: (ev: { target: { id: string } }) => void) => void; fitView: () => void } }).Graph;
+
+      const inst = new Graph({
+        container: containerRef.current,
+        autoResize: true,
+        background: "transparent",
+        data: { nodes, edges },
+        layout: layoutConfig,
+        node: {
+          type: "circle",
+        },
+        edge: {
+          type: "line",
+        },
+        behaviors: [
+          "drag-canvas",
+          "zoom-canvas",
+          "drag-element",
+          {
+            type: "hover-activate",
+            degree: 1,
+          },
+        ],
+        animation: { duration: 380 },
+      });
+
+      inst.on("node:click", (ev: { target: { id: string } }) => {
+        window.location.href = `/context/${encodeURIComponent(ev.target.id)}`;
+      });
+      inst.on("node:pointerenter", (ev: { target: { id: string } }) => {
+        const n = byId.get(ev.target.id);
+        if (n) setHovered(n);
+      });
+      inst.on("node:pointerleave", () => setHovered(null));
+
+      await inst.render();
+      inst.fitView();
+
+      graph = inst;
+      graphRef.current = inst;
+    })();
+
+    return () => {
+      cancelled = true;
+      if (graph?.destroy) graph.destroy();
+      graphRef.current = null;
+    };
+  }, [data, filterType, layout, byId]);
 
   return (
     <>
@@ -106,7 +249,7 @@ export default function GraphPage() {
               margin: "0 0 12px",
             }}
           >
-            / knowledge graph · interactive
+            / knowledge graph · live
           </p>
           <h1
             style={{
@@ -119,7 +262,7 @@ export default function GraphPage() {
           >
             The seeded corpus,{" "}
             <span className="serif-italic" style={{ fontWeight: 400 }}>
-              live.
+              one diagram.
             </span>
           </h1>
           <p
@@ -131,8 +274,8 @@ export default function GraphPage() {
               lineHeight: 1.55,
             }}
           >
-            Drag nodes around, zoom with the wheel, click a node to open its
-            Context.md. Edges are real relationships from the fact store —{" "}
+            Drag nodes, wheel to zoom, click to open Context.md. Edges are real
+            relationships in the fact store —{" "}
             <code className="mono">parent_id</code> (grey),{" "}
             <code className="mono">tenancy.unit</code>{" "}
             <span style={{ color: TYPE_COLOR.tenant }}>green</span>,{" "}
@@ -141,7 +284,13 @@ export default function GraphPage() {
           </p>
         </header>
 
-        <Legend stats={data?.stats} active={filterType} onToggle={setFilterType} />
+        <Toolbar
+          stats={data?.stats}
+          activeType={filterType}
+          onToggleType={setFilterType}
+          layout={layout}
+          onLayout={setLayout}
+        />
       </main>
 
       <div
@@ -153,9 +302,11 @@ export default function GraphPage() {
           borderRadius: 12,
           background: "var(--bg-elevated)",
           position: "relative",
+          overflow: "hidden",
         }}
       >
-        {!data ? (
+        <div ref={containerRef} style={{ width: "100%", height: "100%" }} />
+        {!data && (
           <p
             className="mono"
             style={{
@@ -169,49 +320,27 @@ export default function GraphPage() {
           >
             loading graph…
           </p>
-        ) : (
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            fitView
-            fitViewOptions={{ padding: 0.2 }}
-            onNodeClick={onNodeClick}
-            onNodeMouseEnter={onNodeMouseEnter}
-            onNodeMouseLeave={onNodeMouseLeave}
-            nodesDraggable
-            nodesConnectable={false}
-            elementsSelectable
-            proOptions={{ hideAttribution: true }}
-            minZoom={0.1}
-            maxZoom={2}
-          >
-            <Background gap={24} size={1} color="var(--border-muted)" />
-            <Controls position="bottom-right" showInteractive={false} />
-            <MiniMap
-              pannable
-              zoomable
-              nodeColor={(n) => (n.data as { typeColor?: string })?.typeColor ?? "#888"}
-              style={{ background: "var(--bg)" }}
-            />
-          </ReactFlow>
         )}
-
         {hovered && <HoverCard node={hovered} />}
       </div>
     </>
   );
 }
 
-// ── Legend / type-filter chips ────────────────────────────────────────────
+// ── Toolbar: layout switch + type-filter chips ────────────────────────────
 
-function Legend({
+function Toolbar({
   stats,
-  active,
-  onToggle,
+  activeType,
+  onToggleType,
+  layout,
+  onLayout,
 }: {
   stats?: GraphPayload["stats"];
-  active: string | null;
-  onToggle: (t: string | null) => void;
+  activeType: string | null;
+  onToggleType: (t: string | null) => void;
+  layout: LayoutKey;
+  onLayout: (l: LayoutKey) => void;
 }) {
   const chips: Array<{ type: string; label: string; count?: number }> = [
     { type: "weg", label: "WEG", count: stats?.weg },
@@ -226,21 +355,53 @@ function Legend({
       style={{
         display: "flex",
         flexWrap: "wrap",
-        gap: 8,
         alignItems: "center",
+        gap: 10,
       }}
     >
+      <div
+        style={{
+          display: "inline-flex",
+          gap: 0,
+          border: "1px solid var(--border)",
+          borderRadius: 8,
+          overflow: "hidden",
+        }}
+      >
+        {LAYOUT_OPTIONS.map((opt) => {
+          const active = layout === opt.value;
+          return (
+            <button
+              key={opt.value}
+              onClick={() => onLayout(opt.value)}
+              style={{
+                padding: "6px 12px",
+                background: active ? "var(--brand)" : "var(--bg)",
+                color: active ? "white" : "var(--fg)",
+                border: "none",
+                borderRight: "1px solid var(--border)",
+                fontSize: 12,
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
+
       {chips.map((c) => {
-        const isActive = active === c.type;
+        const isActive = activeType === c.type;
         return (
           <button
             key={c.type}
-            onClick={() => onToggle(isActive ? null : c.type)}
+            onClick={() => onToggleType(isActive ? null : c.type)}
             style={{
               display: "inline-flex",
               alignItems: "center",
               gap: 8,
-              padding: "6px 12px",
+              padding: "5px 12px",
               borderRadius: 999,
               border: `1px solid ${isActive ? TYPE_COLOR[c.type] : "var(--border)"}`,
               background: isActive ? TYPE_COLOR[c.type] + "33" : "var(--bg)",
@@ -273,11 +434,12 @@ function Legend({
           </button>
         );
       })}
+
       {stats && stats.open_incidents > 0 && (
         <span
           className="mono"
           style={{
-            marginLeft: 8,
+            marginLeft: "auto",
             fontSize: 11,
             color: "var(--severity-critical)",
             padding: "5px 10px",
@@ -306,6 +468,7 @@ function HoverCard({ node }: { node: GraphNode }) {
         borderRadius: 10,
         boxShadow: "0 4px 24px rgba(0,0,0,0.18)",
         zIndex: 50,
+        pointerEvents: "auto",
       }}
     >
       <div
@@ -349,188 +512,29 @@ function HoverCard({ node }: { node: GraphNode }) {
   );
 }
 
-// ── Build the React Flow node + edge arrays from the API payload ──────────
+// ── Helpers ───────────────────────────────────────────────────────────────
 
-function buildFlowGraph(
-  data: GraphPayload | null,
-  filterType: string | null,
-): { nodes: Node[]; edges: Edge[] } {
-  if (!data) return { nodes: [], edges: [] };
-
-  // Layer the nodes by type into 5 columns. Inside each column we space
-  // entries top-to-bottom with a fixed step, except units / tenants / owners
-  // which try to align with their related unit so the parent edges are flat.
-  const positions = new Map<string, { x: number; y: number }>();
-
-  const buildings = data.nodes
-    .filter((n) => n.type === "building")
-    .sort((a, b) => a.id.localeCompare(b.id));
-  const units = data.nodes.filter((n) => n.type === "unit");
-  const tenants = data.nodes.filter((n) => n.type === "tenant");
-  const owners = data.nodes.filter((n) => n.type === "owner");
-  const contractors = data.nodes.filter((n) => n.type === "contractor");
-  const weg = data.nodes.find((n) => n.type === "weg");
-
-  const TOP = 0;
-  const UNIT_STEP = 36;
-  const PERSON_STEP = 40;
-
-  // Units grouped by building, sorted within each group.
-  const unitsByBldg = new Map<string, GraphNode[]>();
-  for (const u of units) {
-    const k = u.parent_id ?? "orphan";
-    if (!unitsByBldg.has(k)) unitsByBldg.set(k, []);
-    unitsByBldg.get(k)!.push(u);
+function sizeFor(type: string): number {
+  switch (type) {
+    case "weg":
+      return 44;
+    case "building":
+      return 32;
+    case "unit":
+      return 18;
+    case "contractor":
+      return 22;
+    case "tenant":
+    case "owner":
+    default:
+      return 16;
   }
-  for (const list of unitsByBldg.values()) {
-    list.sort((a, b) =>
-      a.name.localeCompare(b.name, undefined, { numeric: true }),
-    );
-  }
-
-  // Lay out building columns vertically with a generous gap so each
-  // building's units fit underneath without overlapping the next one.
-  let unitCursor = TOP;
-  buildings.forEach((b) => {
-    const list = unitsByBldg.get(b.id) ?? [];
-    const stripStart = unitCursor;
-    const stripCenter = stripStart + (list.length * UNIT_STEP) / 2;
-    positions.set(b.id, { x: COL_X.building, y: stripCenter });
-    list.forEach((u, i) => {
-      positions.set(u.id, { x: COL_X.unit, y: stripStart + i * UNIT_STEP });
-    });
-    unitCursor = stripStart + list.length * UNIT_STEP + 80;
-  });
-
-  // Tenant aligned with their unit y, owners stacked next to their first unit.
-  for (const t of tenants) {
-    if (!t.unit) continue;
-    const u = positions.get(t.unit);
-    if (!u) continue;
-    positions.set(t.id, { x: COL_X.person, y: u.y });
-  }
-
-  // Owners — at the average y of owned units; offset slightly so they don't
-  // overlap their tenant counterparts.
-  const ownerCursor = new Map<number, number>();
-  for (const o of owners) {
-    if (!o.owns || o.owns.length === 0) continue;
-    const ys = o.owns
-      .map((id) => positions.get(id)?.y)
-      .filter((y): y is number => typeof y === "number");
-    if (ys.length === 0) continue;
-    const avg = ys.reduce((a, b) => a + b, 0) / ys.length;
-    // Bucket by integer y so coincident owners get vertical offsets instead of
-    // stacking on top of each other.
-    const bucket = Math.round(avg / 30);
-    const offset = (ownerCursor.get(bucket) ?? 0) * 30;
-    ownerCursor.set(bucket, (ownerCursor.get(bucket) ?? 0) + 1);
-    positions.set(o.id, { x: COL_X.person + 110, y: avg + offset });
-  }
-
-  // Contractors evenly spaced along the right column.
-  contractors.forEach((c, i) => {
-    positions.set(c.id, { x: COL_X.contractor, y: TOP + i * PERSON_STEP });
-  });
-
-  // WEG at the average building y.
-  if (weg) {
-    const ys = buildings
-      .map((b) => positions.get(b.id)?.y)
-      .filter((y): y is number => typeof y === "number");
-    const y = ys.length ? ys.reduce((a, b) => a + b, 0) / ys.length : 200;
-    positions.set(weg.id, { x: COL_X.weg, y });
-  }
-
-  // Build the React Flow nodes. We use the default node renderer with a
-  // styled label so we don't have to register custom node types — keeps the
-  // page lean.
-  const nodes: Node[] = data.nodes
-    .filter((n) => positions.has(n.id))
-    .map((n) => {
-      const p = positions.get(n.id)!;
-      const dim = filterType !== null && filterType !== n.type;
-      const color = TYPE_COLOR[n.type] ?? "#888";
-      const isOpen = n.open_incidents > 0;
-      const labelStyle: React.CSSProperties = {
-        padding: "6px 10px",
-        borderRadius: n.type === "weg" || n.type === "building" ? 8 : 14,
-        background:
-          n.type === "weg"
-            ? color + "22"
-            : isOpen
-              ? "rgba(220,80,60,0.12)"
-              : "var(--bg)",
-        color: "var(--fg)",
-        border: `1.4px solid ${isOpen ? "var(--severity-critical)" : color}`,
-        fontSize: n.type === "weg" ? 14 : n.type === "building" ? 12 : 11,
-        fontWeight: n.type === "weg" ? 600 : 500,
-        minWidth: n.type === "weg" ? 80 : n.type === "building" ? 90 : 70,
-        textAlign: "center" as const,
-        opacity: dim ? 0.18 : 1,
-        whiteSpace: "nowrap" as const,
-      };
-      return {
-        id: n.id,
-        position: p,
-        data: {
-          label: (
-            <span style={labelStyle}>
-              {n.type === "weg"
-                ? "WEG"
-                : n.type === "building"
-                  ? n.name
-                  : n.type === "unit"
-                    ? n.name
-                    : truncate(n.name.replace(/^(?:Frau|Herr|Herrn)\s+/, ""), 20)}
-            </span>
-          ),
-          typeColor: color,
-        },
-        style: {
-          background: "transparent",
-          border: "none",
-          padding: 0,
-          opacity: dim ? 0.3 : 1,
-        },
-        sourcePosition: Position.Right,
-        targetPosition: Position.Left,
-        draggable: true,
-        connectable: false,
-      };
-    });
-
-  // Edges. Bezier looks best for this scale; we color by relationship kind.
-  const edges: Edge[] = data.edges
-    .filter((e) => positions.has(e.from) && positions.has(e.to))
-    .map((e, i) => {
-      const dim =
-        filterType !== null &&
-        !data.nodes.some(
-          (n) => (n.id === e.from || n.id === e.to) && n.type === filterType,
-        );
-      const stroke =
-        e.kind === "parent"
-          ? "var(--border-muted)"
-          : e.kind === "tenancy"
-            ? TYPE_COLOR.tenant
-            : TYPE_COLOR.owner;
-      return {
-        id: `e${i}-${e.from}-${e.to}`,
-        source: e.from,
-        target: e.to,
-        type: "default",
-        style: {
-          stroke,
-          strokeWidth: e.kind === "parent" ? 1 : 0.8,
-          opacity: dim ? 0.06 : e.kind === "parent" ? 0.55 : 0.5,
-        },
-      };
-    });
-
-  return { nodes, edges };
 }
 
-function truncate(s: string, n: number): string {
-  return s.length > n ? s.slice(0, n - 1) + "…" : s;
+function labelFor(n: GraphNode): string {
+  if (n.type === "weg") return "WEG";
+  if (n.type === "building") return n.name;
+  if (n.type === "unit") return n.name;
+  // Strip German salutations from people / contractor labels for compactness.
+  return n.name.replace(/^(?:Frau|Herr|Herrn)\s+/, "").slice(0, 24);
 }

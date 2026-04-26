@@ -304,6 +304,9 @@ function DemoNarrative() {
     body: React.ReactNode;
     cta?: { label: string; href: string };
     metric?: React.ReactNode;
+    /** Inline interactive mini-demo. Renders below the body so the
+     *  user can experience the feature without leaving the home page. */
+    widget?: React.ReactNode;
   }> = [
     {
       n: "01",
@@ -349,6 +352,7 @@ function DemoNarrative() {
           a fact, so the next status update inherits it.
         </>
       ),
+      widget: <ActionLadderDemo />,
       cta: { label: "Open dashboard", href: "/dashboard" },
     },
     {
@@ -371,6 +375,7 @@ function DemoNarrative() {
           defends it in court six months from now.
         </>
       ),
+      widget: <TimelineDemo />,
       cta: { label: "Try /context/tenant:MIE-017", href: "/context/tenant:MIE-017" },
     },
     {
@@ -394,6 +399,7 @@ function DemoNarrative() {
           lives at the storage layer.
         </>
       ),
+      widget: <VerifiableDemo />,
       cta: {
         label: "Open Edeltraud's Context.md",
         href: "/context/tenant:MIE-017",
@@ -404,21 +410,16 @@ function DemoNarrative() {
       eyebrow: "/ lightning fast",
       title: (
         <>
-          224 open recs in{" "}
+          16,874 facts.{" "}
           <span className="serif-italic" style={{ color: "var(--brand-tint)" }}>
-            30 ms
+            Queue ready in 30 ms.
           </span>
-          .
         </>
       ),
       body: (
         <>
-          The recs engine builds the queue from 16,874 facts in &lt;7 s
-          cold, &lt;30 ms warm — write-driven cache, pre-warmed at seed,
-          re-warmed after every ingest. Context.md rendered in 12 ms with
-          a stable byte-prefix that hits Anthropic&apos;s prompt cache 90 %
-          of the time. Re-opening a PDF for a different fact: ~50 ms (canvas
-          reused, only rect math runs).
+          The dashboard, the agent, and every Context.md read off the same
+          warm cache. Every write invalidates only what it changed.
         </>
       ),
       metric: (
@@ -433,10 +434,10 @@ function DemoNarrative() {
           }}
         >
           {[
-            { k: "Recs warm", v: "30 ms" },
-            { k: "Render p50", v: "12 ms" },
-            { k: "Tokens (d=1)", v: "−97 %" },
-            { k: "Cache hit", v: "90 %" },
+            { k: "Recs (warm)", v: "30 ms" },
+            { k: "Context.md render", v: "12 ms" },
+            { k: "Token budget", v: "−97%" },
+            { k: "Prompt-cache hits", v: "90%" },
           ].map((m) => (
             <div
               key={m.k}
@@ -472,6 +473,7 @@ function DemoNarrative() {
           ))}
         </div>
       ),
+      cta: { label: "How we measured", href: "/research" },
     },
     {
       n: "06",
@@ -487,17 +489,12 @@ function DemoNarrative() {
       ),
       body: (
         <>
-          Ask <em>&ldquo;all open issues for Edeltraud&rdquo;</em>,{" "}
-          <em>&ldquo;total garbage fee 2024&rdquo;</em>,{" "}
-          <em>&ldquo;has Magrit&apos;s water been resolved?&rdquo;</em> — answers
-          come back cited, in the same fact format the page renders. The
-          context the agent reads is a padded table with anchored fact
-          blocks: cache-stable, citation-bearing, ~1.6× smaller than the
-          same facts written as plain English prose. Plain markdown drops
-          provenance; ours carries it as a first-class field on every
-          line.
+          Ask in plain language. Answers come back cited, in the same
+          format the page renders — never paraphrased. The agent reads a
+          padded fact table, not prose, so every line keeps its source.
         </>
       ),
+      widget: <AgentDemo />,
     },
   ];
 
@@ -602,6 +599,7 @@ function DemoNarrative() {
                   {b.body}
                 </p>
                 {b.metric}
+                {b.widget && <div style={{ marginTop: 18 }}>{b.widget}</div>}
                 {b.cta && (
                   <div style={{ marginTop: 16 }}>
                     <Link
@@ -631,6 +629,453 @@ function DemoNarrative() {
         </div>
       </div>
     </section>
+  );
+}
+
+// ── Mini demos for each pitch beat ───────────────────────────────────────
+
+/**
+ * Beat 02: a styled rec card showing Edeltraud's Mietminderung with
+ * the action ladder. Click "Open reply" to expand the actual draft
+ * preview text. No live data — purely illustrative, but the copy is
+ * lifted verbatim from what the engine produces in production.
+ */
+function ActionLadderDemo() {
+  const [open, setOpen] = useState<"reply" | "dispatch" | null>(null);
+  return (
+    <div
+      style={{
+        border: "1px solid var(--border)",
+        borderRadius: 10,
+        background: "var(--bg-elevated)",
+        padding: 16,
+        maxWidth: 680,
+      }}
+    >
+      <div style={{ display: "grid", gridTemplateColumns: "4px 1fr auto", gap: 12, alignItems: "center" }}>
+        <div style={{ width: 4, height: 36, borderRadius: 2, background: "var(--severity-critical)" }} />
+        <div>
+          <div style={{ fontSize: 13.5, fontWeight: 500 }}>Mietminderung 15% angekündigt</div>
+          <div className="font-mono" style={{ fontSize: 11, color: "var(--fg-dim)", marginTop: 2 }}>
+            Frau Edeltraud Renner · root cause: Wasserschaden + Schimmelbefall
+          </div>
+        </div>
+        <div className="font-mono" style={{ fontSize: 10, color: "var(--severity-critical)" }}>
+          CRITICAL
+        </div>
+      </div>
+
+      <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 6 }}>
+        {[
+          {
+            id: "dispatch" as const,
+            label: "1. Dispatch Sanitär Schulze for Wasserschaden",
+            icon: "→",
+            tone: "var(--brand)",
+          },
+          {
+            id: "reply" as const,
+            label: "2. Tenant status update — \"contractor already contacted\"",
+            icon: "✉",
+            tone: "var(--brand)",
+          },
+          {
+            id: null,
+            label: "3. Legal review pending — Anwalt prepared",
+            icon: "⚖",
+            tone: "var(--fg-muted)",
+          },
+        ].map((step, i) => (
+          <button
+            key={i}
+            onClick={() => step.id && setOpen(open === step.id ? null : step.id)}
+            disabled={!step.id}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "20px 1fr auto",
+              gap: 10,
+              padding: "8px 10px",
+              border: "1px solid var(--border-muted)",
+              borderRadius: 6,
+              background: open === step.id ? "var(--brand-wash)" : "var(--bg)",
+              color: step.tone,
+              fontSize: 12.5,
+              cursor: step.id ? "pointer" : "default",
+              fontFamily: "inherit",
+              textAlign: "left",
+              alignItems: "center",
+            }}
+          >
+            <span className="font-mono" style={{ fontSize: 10 }}>{step.icon}</span>
+            <span>{step.label}</span>
+            {step.id && (
+              <span className="font-mono" style={{ fontSize: 10, color: "var(--fg-dim)" }}>
+                {open === step.id ? "↑" : "↓"}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {open === "reply" && (
+        <div
+          style={{
+            marginTop: 12,
+            padding: "12px 14px",
+            border: "1px solid var(--brand-line)",
+            borderRadius: 6,
+            background: "var(--bg)",
+            fontSize: 12.5,
+            color: "var(--fg-muted)",
+            lineHeight: 1.55,
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          <div className="font-mono" style={{ fontSize: 10, color: "var(--fg-dim)", marginBottom: 6 }}>
+            TO Frau Edeltraud Renner · SUBJECT Statusupdate: Mietminderung
+          </div>
+          {`Sehr geehrte Frau Renner,
+
+vielen Dank für Ihre Mitteilung. Wir bestätigen den Eingang Ihrer Mietminderungs-Ankündigung wegen Wasserschaden und Schimmelbefall.
+
+Wir haben bereits Sanitär Schulze GmbH mit der Mängelbehebung beauftragt. Ein konkreter Reparaturtermin folgt innerhalb der nächsten Werktage.
+
+Mit freundlichen Grüßen
+Anna Berger
+Huber & Partner Immobilienverwaltung`}
+        </div>
+      )}
+      {open === "dispatch" && (
+        <div
+          style={{
+            marginTop: 12,
+            padding: "12px 14px",
+            border: "1px solid var(--brand-line)",
+            borderRadius: 6,
+            background: "var(--bg)",
+            fontSize: 12.5,
+            color: "var(--fg-muted)",
+            lineHeight: 1.55,
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          <div className="font-mono" style={{ fontSize: 10, color: "var(--fg-dim)", marginBottom: 6 }}>
+            TO Sanitär Schulze GmbH · SUBJECT Reparaturauftrag — Wasserschaden WE 29
+          </div>
+          {`Sehr geehrter Herr Jessel,
+
+wir bitten Sie dringend um die sofortige Behebung eines Wasserschadens, der zu einer angekündigten Mietminderung führt. Bitte vereinbaren Sie einen Termin innerhalb der nächsten 48 Stunden.
+
+Mit freundlichen Grüßen
+Huber & Partner Immobilienverwaltung`}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Beat 03: bitemporal slider that re-renders a small "as of" panel.
+ * Static data baked in — five anchor dates each with a count of facts
+ * known + a representative fact line. Drag = visible state change
+ * without leaving the home page.
+ */
+function TimelineDemo() {
+  const anchors = [
+    { d: "2024-01-15", facts: 12, line: "tenancy.kaltmiete  €1,781 / month" },
+    { d: "2024-08-10", facts: 38, line: "incident.type  water_damage  ^[Wasserschaden Bad]" },
+    { d: "2025-03-22", facts: 71, line: "incident.type  mold  ^[Schimmel im Schlafzimmer]" },
+    { d: "2025-12-15", facts: 124, line: "legal.mietminderung.prozent  15  ^[Mietminderung Ankuendigung]" },
+    { d: "2026-04-26", facts: 167, line: "incident.status  dispatched  ^[Sanitär Schulze beauftragt]" },
+  ];
+  const [idx, setIdx] = useState(anchors.length - 1);
+  const cur = anchors[idx];
+  return (
+    <div
+      style={{
+        border: "1px solid var(--border)",
+        borderRadius: 10,
+        background: "var(--bg-elevated)",
+        padding: 16,
+        maxWidth: 680,
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+        <span className="font-mono" style={{ fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+          As known on
+        </span>
+        <span
+          className="font-mono"
+          style={{
+            fontSize: 12,
+            color: "var(--brand)",
+            padding: "2px 8px",
+            borderRadius: 4,
+            background: "var(--brand-wash)",
+            fontFeatureSettings: '"tnum"',
+          }}
+        >
+          {cur.d}
+        </span>
+      </div>
+      <input
+        type="range"
+        min={0}
+        max={anchors.length - 1}
+        step={1}
+        value={idx}
+        onChange={(e) => setIdx(Number(e.target.value))}
+        style={{ width: "100%", accentColor: "var(--brand)" }}
+        aria-label="Time-travel through Edeltraud's facts"
+      />
+      <div
+        className="font-mono"
+        style={{
+          marginTop: 12,
+          padding: "10px 12px",
+          background: "var(--bg)",
+          border: "1px solid var(--border-muted)",
+          borderRadius: 6,
+          fontSize: 12,
+          color: "var(--fg)",
+          fontFeatureSettings: '"tnum"',
+        }}
+      >
+        <div style={{ color: "var(--fg-dim)", marginBottom: 4, fontSize: 10 }}>
+          tenant:MIE-017 · {cur.facts} facts known
+        </div>
+        <div>{cur.line}</div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Beat 04: a faux PDF page with the extraction span outlined in brand
+ * color, plus the resulting fact below. Static screenshot-equivalent
+ * built in CSS so it ships with the page (no PDF round-trip).
+ */
+function VerifiableDemo() {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 220px", gap: 12, maxWidth: 680 }}>
+      <div
+        style={{
+          border: "1px solid var(--border)",
+          borderRadius: 10,
+          background: "white",
+          padding: 18,
+          color: "#222",
+          fontSize: 11,
+          lineHeight: 1.6,
+          fontFamily: "var(--font-mono)",
+          position: "relative",
+          minHeight: 220,
+        }}
+      >
+        <div style={{ fontSize: 9, color: "#888", marginBottom: 6 }}>
+          20250108_mietminderung_we29.pdf · page 1
+        </div>
+        <div style={{ fontWeight: 600, marginBottom: 8 }}>
+          Mietminderung Ankündigung — WE 29
+        </div>
+        <div>Sehr geehrte Verwaltung,</div>
+        <div style={{ marginTop: 8 }}>da die Baumängel{" "}
+          <span
+            style={{
+              background: "color-mix(in srgb, var(--brand) 28%, transparent)",
+              padding: "1px 3px",
+              borderRadius: 3,
+              boxShadow: "0 0 0 1px color-mix(in srgb, var(--brand) 60%, transparent)",
+            }}
+          >
+            (Wasserschaden, Schimmel)
+          </span>{" "}
+          in meiner Wohnung WE 29 seit über 3 Monaten nicht behoben sind, werde ich die Miete ab{" "}
+          <span
+            style={{
+              background: "color-mix(in srgb, var(--brand) 28%, transparent)",
+              padding: "1px 3px",
+              borderRadius: 3,
+              boxShadow: "0 0 0 1px color-mix(in srgb, var(--brand) 60%, transparent)",
+            }}
+          >
+            02.02.2026 um 15% mindern
+          </span>
+          .</div>
+        <div style={{ marginTop: 14 }}>Edeltraud Renner</div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <FactChip
+          predicate="legal.mietminderung.prozent"
+          value="15"
+          source="20250108_mietminderung_we29.pdf"
+        />
+        <FactChip
+          predicate="legal.mietminderung.start"
+          value="2026-02-02"
+          source="20250108_mietminderung_we29.pdf"
+        />
+        <FactChip
+          predicate="incident.type"
+          value="water_damage"
+          source="20250108_mietminderung_we29.pdf"
+        />
+        <FactChip
+          predicate="incident.type"
+          value="mold"
+          source="20250108_mietminderung_we29.pdf"
+        />
+      </div>
+    </div>
+  );
+}
+
+function FactChip({
+  predicate,
+  value,
+  source,
+}: {
+  predicate: string;
+  value: string;
+  source: string;
+}) {
+  return (
+    <div
+      style={{
+        padding: "8px 10px",
+        border: "1px solid var(--border-muted)",
+        borderRadius: 6,
+        background: "var(--bg)",
+        fontSize: 11,
+      }}
+    >
+      <div className="font-mono" style={{ color: "var(--fg-dim)", fontSize: 10 }}>
+        {predicate}
+      </div>
+      <div className="font-mono" style={{ color: "var(--fg)", fontWeight: 500, marginTop: 2 }}>
+        {value}
+      </div>
+      <div
+        className="font-mono"
+        style={{
+          color: "var(--brand)",
+          fontSize: 9.5,
+          marginTop: 4,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+        title={source}
+      >
+        ^[{source}]
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Beat 06: chip-driven agent demo. Click a sample query, see a canned
+ * cited answer fade in. Mirrors what /api/agent returns for these exact
+ * questions on the seeded corpus.
+ */
+function AgentDemo() {
+  const queries = [
+    {
+      q: "How much rent does Edeltraud pay?",
+      a: (
+        <>
+          Frau Edeltraud Renner zahlt eine Kaltmiete von €1.781/Monat plus €310 Nebenkosten.{" "}
+          <span style={{ color: "var(--brand)" }}>^[Stammdaten: Frau Edeltraud Renner]</span>
+        </>
+      ),
+    },
+    {
+      q: "All open issues for Edeltraud",
+      a: (
+        <>
+          Mietminderung 15% (Wasserschaden + Schimmelbefall) und Kündigung Mietvertrag — beide kritisch.{" "}
+          <span style={{ color: "var(--brand)" }}>^[Mietminderung Ankuendigung]</span>{" "}
+          <span style={{ color: "var(--brand)" }}>^[Kuendigung Mietvertrag]</span>
+        </>
+      ),
+    },
+    {
+      q: "Who lives in WE 32?",
+      a: (
+        <>
+          In WE 32 wohnt Frau Magrit Mitschke seit 2021-08-27.{" "}
+          <span style={{ color: "var(--brand)" }}>^[Stammdaten: WE 32]</span>
+        </>
+      ),
+    },
+    {
+      q: "Total garbage fee 2024?",
+      a: (
+        <>
+          Müllgebühr 2024: €181,96.{" "}
+          <span style={{ color: "var(--brand)" }}>^[20250422_bka_LTR-0108]</span>
+        </>
+      ),
+    },
+  ];
+  const [pick, setPick] = useState(0);
+  const [revealed, setRevealed] = useState(true);
+  const sel = queries[pick];
+
+  return (
+    <div
+      style={{
+        border: "1px solid var(--border)",
+        borderRadius: 10,
+        background: "var(--bg-elevated)",
+        padding: 16,
+        maxWidth: 680,
+      }}
+    >
+      <div className="font-mono" style={{ fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
+        ⌘K · ask the agent
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+        {queries.map((qq, i) => (
+          <button
+            key={qq.q}
+            onClick={() => {
+              setPick(i);
+              setRevealed(false);
+              setTimeout(() => setRevealed(true), 120);
+            }}
+            style={{
+              padding: "6px 12px",
+              borderRadius: 999,
+              border: `1px solid ${pick === i ? "var(--brand)" : "var(--border)"}`,
+              background: pick === i ? "var(--brand-wash)" : "var(--bg)",
+              color: pick === i ? "var(--brand)" : "var(--fg-muted)",
+              fontSize: 11,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            {qq.q}
+          </button>
+        ))}
+      </div>
+      <div
+        style={{
+          padding: "12px 14px",
+          background: "var(--bg)",
+          border: "1px solid var(--border-muted)",
+          borderRadius: 6,
+          fontSize: 12.5,
+          color: "var(--fg)",
+          lineHeight: 1.6,
+          opacity: revealed ? 1 : 0.4,
+          transition: "opacity 200ms",
+          minHeight: 56,
+        }}
+      >
+        {sel.a}
+      </div>
+    </div>
   );
 }
 

@@ -66,12 +66,20 @@ export default function ContextPage({
 
   // Re-fetch the projected view whenever the user moves the slider. We don't
   // touch allFacts here so the timeline ticks stay stable.
+  //
+  // Pass BOTH at_valid (when in the world the fact was true) AND at_known
+  // (when we wrote it down). A common surprise: most stammdaten facts
+  // have no valid_from, so a pure at_valid scrub leaves them all
+  // visible — the user scrubs back to 2024 and still sees rents that
+  // were only written into the system on 2026-04-26. Setting at_known
+  // to the same anchor implements true "as known on that date" travel.
   useEffect(() => {
     if (atValid === null) return;
     let cancelled = false;
     const url =
       `/api/context/${encodeURIComponent(entity)}` +
-      `?format=json&detail=3&at_valid=${encodeURIComponent(atValid)}`;
+      `?format=json&detail=3&at_valid=${encodeURIComponent(atValid)}` +
+      `&at_known=${encodeURIComponent(atValid)}`;
     fetch(url)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((d: ContextResponse) => {

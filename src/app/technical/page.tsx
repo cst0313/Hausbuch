@@ -1193,18 +1193,6 @@ function EmailTriggerDiagram() {
         {/* UI → actions */}
         <Arrow2 x1={540} y1={299} x2={560} y2={299} />
 
-        {/* Feedback loop: actions → step 1 (outbound becomes a new email source) */}
-        <path
-          d="M780,264 Q780,200 130,140 Q120,90 125,112"
-          stroke="var(--brand)"
-          strokeWidth="1.4"
-          strokeDasharray="3 3"
-          fill="none"
-          markerEnd="url(#arr2Brand)"
-        />
-        <text x={780} y={210} fontSize="10" fill="var(--brand)" fontFamily="var(--font-mono)" letterSpacing="0.04em">
-          outbound = next email source · ⑦ flips
-        </text>
       </svg>
     </div>
   );

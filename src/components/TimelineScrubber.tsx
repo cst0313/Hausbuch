@@ -253,7 +253,7 @@ export function TimelineScrubber({ facts, at, onChange, onJumpToTick }: Props) {
         style={{ color: "var(--fg-dim)" }}
       >
         <span>{formatDate(min)}</span>
-        <span>drag · click ticks · ←/→ for day · Home/End for bounds</span>
+        <span>drag · click ticks</span>
         <span>{formatDate(max)}</span>
       </div>
     </div>

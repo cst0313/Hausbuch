@@ -9,7 +9,7 @@
  *     items: [{
  *       name: string,                     // file name (for the source title)
  *       kind: SourceKind,                 // "letter" | "invoice" | "email" | "note"
- *       raw_excerpt: string,              // original text (cap 8 KB)
+ *       raw_excerpt: string,              // original text (cap RAW_EXCERPT_BYTES = 128 KB)
  *       source_prior: number,             // 0..1
  *       target_entity: string,            // routed entity ID
  *       facts: Array<{
@@ -35,7 +35,7 @@ import {
   newFactId,
   newSourceId,
 } from "@/lib/db";
-import type { Fact, Source, SourceKind } from "@/lib/types";
+import { RAW_EXCERPT_BYTES, type Fact, type Source, type SourceKind } from "@/lib/types";
 import { invalidateRecommendationsCache } from "@/lib/recommendations";
 import { recordAction } from "@/lib/actions";
 
@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
       kind: item.kind,
       title: item.name,
       ingested_at: now,
-      raw_excerpt: item.raw_excerpt.slice(0, 8192),
+      raw_excerpt: item.raw_excerpt.slice(0, RAW_EXCERPT_BYTES),
       source_prior: clamp01(item.source_prior),
       entity_id: item.target_entity,
     };

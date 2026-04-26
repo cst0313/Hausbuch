@@ -13,6 +13,16 @@ export type EntityId = string; // e.g. "weg:immanuelkirchstr-26", "unit:EH-001"
 export type SourceId = string; // e.g. "src:land-registry"
 export type FactId = string; // uuid
 
+/**
+ * Maximum bytes of extracted text we feed into the fact extractor and store as
+ * raw_excerpt on a Source. Bumped from 8 KB → 128 KB to handle the long
+ * design / inspection / building reports the engine routinely sees (≈50+
+ * pages of typical text per document). Cost in the extractor scales linearly
+ * with this value — keep it shared so a single edit re-tunes every code path
+ * (upload, upload-bulk, commit, route-doc probe, seed).
+ */
+export const RAW_EXCERPT_BYTES = 131072;
+
 // ── Entity types (WEG hierarchy) ────────────────────────────────────────────
 
 export type EntityType = "weg" | "building" | "unit" | "owner" | "tenant" | "contractor";

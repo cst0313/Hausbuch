@@ -13,7 +13,7 @@
 import type Database from "better-sqlite3";
 import fs from "fs";
 import path from "path";
-import type { Entity, Fact, Source, SourceKind } from "./types";
+import { RAW_EXCERPT_BYTES, type Entity, type Fact, type Source, type SourceKind } from "./types";
 import {
   ident,
   insertEntity,
@@ -983,7 +983,7 @@ function importPdfs(data: Stammdaten): void {
       kind: isInvoice ? "invoice" : "letter",
       title: filename.replace(/\.pdf$/i, ""),
       ingested_at: now,
-      raw_excerpt: entry.text.slice(0, 8192),
+      raw_excerpt: entry.text.slice(0, RAW_EXCERPT_BYTES),
       source_prior: 0.9,
     };
     const facts = ext.extractSync(ENTITY, sourceProbe);

@@ -156,10 +156,13 @@ incident.status
           </ul>
           <Callout>
             Measured against the live database (<code className="mono">scripts/bench-render.mjs</code>):
-            the structured Context.md averages <strong>1.64× smaller (39% fewer tokens)</strong>{" "}
-            than the same facts written as plain English prose, across 2,571 facts /
-            4 representative entities. Plus the byte-stable prefix earns a 90% prompt-cache
-            hit on every follow-up question. Full table on{" "}
+            at <code className="mono">detail=3</code> (anchored, full provenance) the structured
+            Context.md averages <strong>1.64× smaller (39% fewer tokens)</strong> than the same
+            facts written as plain English prose, across 2,571 facts / 4 representative entities.
+            At <code className="mono">detail=1</code> (compact mode used for cross-references) the
+            gap widens to <strong>87–97% fewer tokens</strong> because anchors and volatile
+            sections drop out. Plus the byte-stable prefix earns a 90% prompt-cache hit on every
+            follow-up question. Full table on{" "}
             <a href="/research" style={{ color: "var(--brand)" }}>/research</a>.
           </Callout>
         </Section>

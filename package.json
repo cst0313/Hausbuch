@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "description": "Hausbuch — a context engine for property management. One living, self-updating, citation-backed Context.md per building.",
   "private": true,
+  "license": "BUSL-1.1",
+  "author": "Jeffrey Chang",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

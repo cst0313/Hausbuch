@@ -97,14 +97,23 @@ export default function DashboardPage() {
   };
 
   const refresh = () => {
-    Promise.all([
-      fetch("/api/recommendations").then((r) => r.json()),
-      fetch("/api/audit?limit=200").then((r) => r.json()),
-    ])
-      .then(([recsData, actData]) => {
-        setRecs(recsData.recommendations ?? []);
-        setActivity(actData.actions ?? []);
+    // Fire both independently so the audit strip doesn't wait for the
+    // recs cold path (9–10 s on a fresh server before the engine cache
+    // warms). Each setter lights up its own surface as soon as it's ready.
+    fetch("/api/recommendations")
+      .then((r) => r.json())
+      .then((d) => {
+        setRecs(d.recommendations ?? []);
+        try {
+          sessionStorage.setItem("hausbuch:recs:v1", JSON.stringify(d.recommendations ?? []));
+        } catch {
+          /* quota / disabled */
+        }
       })
+      .catch(() => {});
+    fetch("/api/audit?limit=200")
+      .then((r) => r.json())
+      .then((d) => setActivity(d.actions ?? []))
       .catch(() => {});
   };
 
@@ -136,20 +145,55 @@ export default function DashboardPage() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([
-      fetch("/api/recommendations").then((r) => r.json()),
-      fetch("/api/audit?limit=200").then((r) => r.json()),
-    ])
-      .then(([recsData, actData]) => {
+
+    // 1. Hydrate recs from sessionStorage if available — re-entering the
+    //    /dashboard tab paints the rec list instantly while a refresh
+    //    runs in the background. The /api/recommendations cold path is
+    //    ~10 s on first hit because the engine has to rebuild from facts.
+    let hydratedFromCache = false;
+    try {
+      const cached = sessionStorage.getItem("hausbuch:recs:v1");
+      if (cached) {
+        const parsed = JSON.parse(cached) as Recommendation[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setRecs(parsed);
+          setLoading(false);
+          hydratedFromCache = true;
+        }
+      }
+    } catch {
+      /* sessionStorage disabled — fall through */
+    }
+
+    // 2. Fire the two fetches independently so the audit strip doesn't
+    //    block on the recs cold path. setLoading(false) the moment EITHER
+    //    arrives so the user sees something happening on a cold server.
+    fetch("/api/recommendations")
+      .then((r) => r.json())
+      .then((d) => {
         if (cancelled) return;
-        setRecs(recsData.recommendations ?? []);
-        setActivity(actData.actions ?? []);
+        const recs = d.recommendations ?? [];
+        setRecs(recs);
         setLoading(false);
+        try {
+          sessionStorage.setItem("hausbuch:recs:v1", JSON.stringify(recs));
+        } catch {
+          /* quota / disabled — silently skip */
+        }
       })
       .catch(() => {
-        if (cancelled) return;
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       });
+
+    fetch("/api/audit?limit=200")
+      .then((r) => r.json())
+      .then((d) => {
+        if (cancelled) return;
+        setActivity(d.actions ?? []);
+        if (!hydratedFromCache) setLoading(false);
+      })
+      .catch(() => {});
+
     return () => {
       cancelled = true;
     };
@@ -346,9 +390,14 @@ export default function DashboardPage() {
 
       {/* Recommendation list */}
       <section style={{ maxWidth: 1480, margin: "0 auto", padding: "8px 48px 80px" }}>
-        {loading && (
-          <p style={{ color: "var(--fg-muted)", padding: "20px 0" }}>{t("audit.loading")}</p>
-        )}
+        {/*
+          Render a skeleton instead of a blank "Loading…" line. The recs
+          cold path is ~10 s on a fresh server while the engine cache
+          warms; the skeleton keeps the page visually alive so the user
+          sees the dashboard's shape immediately, with placeholder rows
+          fading into the real data when the fetch resolves.
+        */}
+        {loading && <RecListSkeleton />}
         {!loading && groups.length === 0 && (
           <p style={{ color: "var(--fg-dim)", padding: "20px 0" }}>{t("dash.section.empty")}</p>
         )}
@@ -688,6 +737,136 @@ function relTime(iso: string): string {
 }
 
 // ── Stat ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Pulsing placeholder for the rec list. Three severity sections, four
+ * faux rows each. Matches the real rows' grid + typography density so
+ * the page doesn't reflow when the data arrives.
+ */
+function RecListSkeleton() {
+  const sections: Array<{ tone: string; rows: number }> = [
+    { tone: "var(--severity-critical)", rows: 2 },
+    { tone: "var(--severity-high)", rows: 4 },
+    { tone: "var(--severity-medium)", rows: 4 },
+  ];
+  return (
+    <div className="pulse" style={{ marginTop: 16 }}>
+      {sections.map((sec, sIdx) => (
+        <div key={sIdx} style={{ marginBottom: 32 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "12px 0",
+              borderBottom: "1px solid var(--border-muted)",
+            }}
+          >
+            <span
+              style={{
+                width: 10,
+                height: 10,
+                borderRadius: "50%",
+                background: sec.tone,
+                opacity: 0.5,
+              }}
+            />
+            <span
+              style={{
+                width: 140,
+                height: 12,
+                background: "var(--border-muted)",
+                borderRadius: 4,
+              }}
+            />
+          </div>
+          {Array.from({ length: sec.rows }).map((_, i) => (
+            <div
+              key={i}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "28px minmax(280px, 1.5fr) minmax(240px, 1.3fr) 220px 180px",
+                gap: 32,
+                padding: "20px 8px 20px 0",
+                borderBottom: "1px solid var(--border-muted)",
+                alignItems: "start",
+              }}
+            >
+              <div
+                style={{
+                  width: 4,
+                  height: 38,
+                  borderRadius: 2,
+                  background: sec.tone,
+                  opacity: 0.35,
+                }}
+              />
+              <div>
+                <div
+                  style={{
+                    width: "70%",
+                    height: 14,
+                    background: "var(--border-muted)",
+                    borderRadius: 4,
+                    marginBottom: 8,
+                  }}
+                />
+                <div
+                  style={{
+                    width: "45%",
+                    height: 10,
+                    background: "var(--border-muted)",
+                    borderRadius: 4,
+                    opacity: 0.7,
+                  }}
+                />
+              </div>
+              <div>
+                <div
+                  style={{
+                    width: "85%",
+                    height: 10,
+                    background: "var(--border-muted)",
+                    borderRadius: 4,
+                    marginBottom: 6,
+                    opacity: 0.6,
+                  }}
+                />
+                <div
+                  style={{
+                    width: "65%",
+                    height: 10,
+                    background: "var(--border-muted)",
+                    borderRadius: 4,
+                    opacity: 0.5,
+                  }}
+                />
+              </div>
+              <div
+                style={{
+                  width: "60%",
+                  height: 24,
+                  background: "var(--border-muted)",
+                  borderRadius: 6,
+                  opacity: 0.5,
+                }}
+              />
+              <div
+                style={{
+                  width: "70%",
+                  height: 24,
+                  background: "var(--border-muted)",
+                  borderRadius: 6,
+                  opacity: 0.5,
+                }}
+              />
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function Stat({
   label,

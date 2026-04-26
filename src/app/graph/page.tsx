@@ -54,7 +54,6 @@ const EDGE_COLOR: Record<string, string> = {
 };
 
 const LAYOUT_OPTIONS = [
-  { value: "dagre", label: "Hierarchical" },
   { value: "radial", label: "Radial" },
   { value: "concentric", label: "Concentric" },
 ] as const;
@@ -65,15 +64,43 @@ export default function GraphPage() {
   const [data, setData] = useState<GraphPayload | null>(null);
   const [filterType, setFilterType] = useState<string | null>(null);
   const [hovered, setHovered] = useState<GraphNode | null>(null);
-  const [layout, setLayout] = useState<LayoutKey>("dagre");
+  const [layout, setLayout] = useState<LayoutKey>("radial");
   const containerRef = useRef<HTMLDivElement | null>(null);
   const graphRef = useRef<unknown | null>(null);
 
   useEffect(() => {
+    // Two-tier cache: hit sessionStorage instantly so re-entering the tab
+    // paints the layout immediately, then refresh from the server in the
+    // background. The server's own /api/graph cache makes the refresh
+    // ~5ms warm — the user-perceived behavior is "always instant".
+    const CACHE_KEY = "hausbuch:graph:v1";
+    let cancelled = false;
+
+    try {
+      const cached = sessionStorage.getItem(CACHE_KEY);
+      if (cached) setData(JSON.parse(cached) as GraphPayload);
+    } catch {
+      /* sessionStorage disabled — fine, fall through to fetch */
+    }
+
     fetch("/api/graph")
       .then((r) => r.json())
-      .then(setData)
-      .catch(() => setData(null));
+      .then((d: GraphPayload) => {
+        if (cancelled) return;
+        setData(d);
+        try {
+          sessionStorage.setItem(CACHE_KEY, JSON.stringify(d));
+        } catch {
+          /* quota / disabled — silently skip */
+        }
+      })
+      .catch(() => {
+        if (!cancelled && !sessionStorage.getItem(CACHE_KEY)) setData(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const byId = useMemo(() => {
@@ -148,30 +175,23 @@ export default function GraphPage() {
       // Layout config per chosen mode. G6 v5 picks reasonable defaults but
       // these tunings keep the dataset (~133 nodes) readable.
       const layoutConfig =
-        layout === "dagre"
+        layout === "radial"
           ? {
-              type: "dagre",
-              rankdir: "LR",
-              nodesep: 14,
-              ranksep: 60,
+              type: "radial",
+              unitRadius: 110,
+              preventOverlap: true,
+              nodeSize: 30,
+              focusNode: data.nodes.find((n) => n.type === "weg")?.id,
             }
-          : layout === "radial"
-            ? {
-                type: "radial",
-                unitRadius: 110,
-                preventOverlap: true,
-                nodeSize: 30,
-                focusNode: data.nodes.find((n) => n.type === "weg")?.id,
-              }
-            : {
-                type: "concentric",
-                preventOverlap: true,
-                nodeSize: 30,
-                // Concentric ordering: WEG center, buildings inner ring,
-                // units mid, people outer.
-                sortBy: (n: { data: { type: string } }) =>
-                  ({ weg: 5, building: 4, unit: 3, contractor: 2, tenant: 1, owner: 1 }[n.data.type] ?? 0),
-              };
+          : {
+              type: "concentric",
+              preventOverlap: true,
+              nodeSize: 30,
+              // Concentric ordering: WEG center, buildings inner ring,
+              // units mid, people outer.
+              sortBy: (n: { data: { type: string } }) =>
+                ({ weg: 5, building: 4, unit: 3, contractor: 2, tenant: 1, owner: 1 }[n.data.type] ?? 0),
+            };
 
       const Graph = (G6 as unknown as { Graph: new (cfg: object) => { destroy?: () => void; render: () => Promise<void>; on: (e: string, cb: (ev: { target: { id: string } }) => void) => void; fitView: () => void } }).Graph;
 

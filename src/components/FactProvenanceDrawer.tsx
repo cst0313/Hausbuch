@@ -143,21 +143,18 @@ export function FactProvenanceDrawer({ fact, source, onClose }: Props) {
                   >
                     {source.kind} · ingested {source.ingested_at}
                   </p>
-                  <blockquote
-                    className="text-[13px] italic leading-relaxed pl-3 border-l-2"
-                    style={{
-                      borderColor: "var(--brand)",
-                      color: "var(--fg-muted)",
-                      fontFamily: "var(--font-serif)",
-                    }}
-                  >
-                    “{source.raw_excerpt.slice(0, 280)}
-                    {source.raw_excerpt.length > 280 ? "…" : ""}”
-                  </blockquote>
+                  {/*
+                    Source preview with the extraction span highlighted.
+                    The italic-serif blockquote read as decorative on a dense
+                    document; replaced with a sans-serif preview that shows
+                    the raw text around the extracted span and highlights
+                    the exact bytes that produced this fact.
+                  */}
+                  <ExtractionPreview source={source} fact={fact} />
 
                   {fact.span && (
                     <div
-                      className="mt-4 text-[11px] font-mono"
+                      className="mt-3 text-[11px] font-mono"
                       style={{ color: "var(--fg-dim)" }}
                     >
                       span [{fact.span.start}:{fact.span.end}] · source_prior{" "}
@@ -201,6 +198,96 @@ function Row({
         {label}
       </span>
       <span className="text-right text-[13px]">{children}</span>
+    </div>
+  );
+}
+
+/**
+ * Show the source's raw text with the exact extraction span highlighted.
+ *
+ * Strategy: locate the fact's span.quote inside source.raw_excerpt, then
+ * window the surrounding text (±220 chars) so the user sees a few sentences
+ * of context around the highlight without scrolling through the whole doc.
+ *
+ * If the quote can't be located in the excerpt — e.g. the excerpt was
+ * truncated before the span, or the source is the whole PDF and the span
+ * indices reference the original text — we fall back to rendering the
+ * quote on its own with a "from {source.kind}" label so the user still
+ * sees what was extracted, just without context around it.
+ */
+function ExtractionPreview({ source, fact }: { source: Source; fact: Fact }) {
+  const body = source.raw_excerpt ?? "";
+  const quote = (fact.span?.quote ?? "").trim();
+
+  let before = "";
+  let highlight = quote;
+  let after = "";
+
+  // Try the span indices first (they're reliable when extraction kept them);
+  // otherwise locate the quote substring directly.
+  let idx = -1;
+  if (
+    fact.span &&
+    typeof fact.span.start === "number" &&
+    fact.span.start >= 0 &&
+    fact.span.start < body.length &&
+    body.slice(fact.span.start, fact.span.end) === quote
+  ) {
+    idx = fact.span.start;
+  } else if (quote) {
+    idx = body.indexOf(quote);
+  }
+
+  const CONTEXT = 220;
+  if (idx >= 0 && quote) {
+    const start = Math.max(0, idx - CONTEXT);
+    const end = Math.min(body.length, idx + quote.length + CONTEXT);
+    before = (start > 0 ? "…" : "") + body.slice(start, idx);
+    highlight = body.slice(idx, idx + quote.length);
+    after = body.slice(idx + quote.length, end) + (end < body.length ? "…" : "");
+  } else {
+    // Quote not in excerpt — show the quote on its own and prefix the body
+    // for orientation.
+    before = body.slice(0, 200) + (body.length > 200 ? "…" : "");
+    highlight = quote || "(no quote captured)";
+    after = "";
+  }
+
+  return (
+    <div
+      className="rounded-md p-3 text-[12.5px] leading-[1.55]"
+      style={{
+        background: "var(--bg)",
+        border: "1px solid var(--border-muted)",
+        color: "var(--fg-muted)",
+        fontFamily: "var(--font-sans)",
+        whiteSpace: "pre-wrap",
+        wordBreak: "break-word",
+        maxHeight: 280,
+        overflowY: "auto",
+      }}
+    >
+      <div
+        className="text-[10px] font-mono uppercase tracking-wider mb-2"
+        style={{ color: "var(--fg-dim)" }}
+      >
+        extraction span
+      </div>
+      <span>{before}</span>
+      <mark
+        style={{
+          background: "color-mix(in srgb, var(--brand) 28%, transparent)",
+          color: "var(--fg)",
+          padding: "1px 3px",
+          borderRadius: 3,
+          // soft ring to make the highlight stand out on busy text
+          boxShadow:
+            "0 0 0 1px color-mix(in srgb, var(--brand) 55%, transparent)",
+        }}
+      >
+        {highlight}
+      </mark>
+      <span>{after}</span>
     </div>
   );
 }

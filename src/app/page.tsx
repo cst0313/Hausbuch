@@ -1053,107 +1053,56 @@ function FactChip({
 }
 
 /**
- * Beat 06: chip-driven agent demo. Click a sample query, see a canned
- * cited answer fade in. Mirrors what /api/agent returns for these exact
- * questions on the seeded corpus.
+ * Beat 06: real screenshot of the agent answering a live question on the
+ * seeded corpus. Replaces an earlier chip-driven mock that let visitors
+ * "pick" between canned questions — this is the actual ⌘K output, captured
+ * from /dashboard?agent=1, so the reasoning timeline (Gemini 2.5 Flash:
+ * thinking → searching → analyzing → answering → suggesting → learning)
+ * is genuine product behavior, not a stylized illustration.
  */
 function AgentDemo() {
-  const queries = [
-    {
-      q: "How much rent does Edeltraud pay?",
-      a: (
-        <>
-          Edeltraud Renner pays €1,781/month base rent plus €310 in operating costs.{" "}
-          <span style={{ color: "var(--brand)" }}>^[Master record: Edeltraud Renner]</span>
-        </>
-      ),
-    },
-    {
-      q: "All open issues for Edeltraud",
-      a: (
-        <>
-          15% rent reduction (water damage + mold) and lease termination — both critical.{" "}
-          <span style={{ color: "var(--brand)" }}>^[rent-reduction notice]</span>{" "}
-          <span style={{ color: "var(--brand)" }}>^[lease termination notice]</span>
-        </>
-      ),
-    },
-    {
-      q: "Who lives in unit 32?",
-      a: (
-        <>
-          Magrit Mitschke has lived in unit 32 since 27 Aug 2021.{" "}
-          <span style={{ color: "var(--brand)" }}>^[Master record: unit 32]</span>
-        </>
-      ),
-    },
-    {
-      q: "Total garbage fee 2024?",
-      a: (
-        <>
-          Garbage fee 2024: €181.96.{" "}
-          <span style={{ color: "var(--brand)" }}>^[2025-04-22 operating-cost letter LTR-0108]</span>
-        </>
-      ),
-    },
-  ];
-  const [pick, setPick] = useState(0);
-  const [revealed, setRevealed] = useState(true);
-  const sel = queries[pick];
-
   return (
     <div
       style={{
         border: "1px solid var(--border)",
         borderRadius: 10,
         background: "var(--bg-elevated)",
-        padding: 16,
+        padding: 12,
         maxWidth: 680,
       }}
     >
-      <div className="font-mono" style={{ fontSize: 10, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
-        ⌘K · ask the agent
-      </div>
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
-        {queries.map((qq, i) => (
-          <button
-            key={qq.q}
-            onClick={() => {
-              setPick(i);
-              setRevealed(false);
-              setTimeout(() => setRevealed(true), 120);
-            }}
-            style={{
-              padding: "6px 12px",
-              borderRadius: 999,
-              border: `1px solid ${pick === i ? "var(--brand)" : "var(--border)"}`,
-              background: pick === i ? "var(--brand-wash)" : "var(--bg)",
-              color: pick === i ? "var(--brand)" : "var(--fg-muted)",
-              fontSize: 11,
-              cursor: "pointer",
-              fontFamily: "inherit",
-            }}
-          >
-            {qq.q}
-          </button>
-        ))}
-      </div>
       <div
+        className="font-mono"
         style={{
-          padding: "12px 14px",
-          background: "var(--bg)",
-          border: "1px solid var(--border-muted)",
-          borderRadius: 6,
-          fontSize: 12.5,
-          color: "var(--fg)",
-          lineHeight: 1.6,
-          opacity: revealed ? 1 : 0.4,
-          transition: "opacity 200ms",
-          minHeight: 56,
+          fontSize: 10,
+          color: "var(--fg-dim)",
+          textTransform: "uppercase",
+          letterSpacing: "0.06em",
+          marginBottom: 10,
+          paddingLeft: 4,
         }}
       >
-        {sel.a}
+        ⌘K · ask the agent · live capture
       </div>
+      <img
+        src="/pitch/agent-answer.png"
+        alt={
+          "Screenshot of Hausbuch's ⌘K agent answering 'Has the water damage in unit 27 been resolved?'. " +
+          "The reasoning timeline shows Gemini 2.5 Flash stepping through thinking, searching the corpus, " +
+          "analyzing 5 open cases, answering, suggesting next steps, and learning the pattern. The answer " +
+          "block reports no information for unit 27 specifically but cites related water-damage reports in " +
+          "WE 31, WE 09, WE 03, WE 49, and WE 19, and asks the user to verify the unit number."
+        }
+        width={985}
+        height={711}
+        style={{
+          display: "block",
+          width: "100%",
+          height: "auto",
+          borderRadius: 6,
+          border: "1px solid var(--border-muted)",
+        }}
+      />
     </div>
   );
 }

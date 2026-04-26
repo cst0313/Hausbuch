@@ -507,7 +507,7 @@ function GroupRow({
 function LatencyMetricCard() {
   const metrics = [
     { k: "Recs (warm)", v: "30 ms" },
-    { k: "Render p50", v: "12 ms" },
+    { k: "Render (warm)", v: "12 ms" },
     { k: "PDF re-open", v: "≈50 ms" },
     { k: "Cache hit", v: "90%" },
   ];

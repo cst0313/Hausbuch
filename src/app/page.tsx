@@ -546,7 +546,7 @@ function DemoNarrative() {
           ))}
         </div>
       ),
-      cta: { label: "How we measured", href: "/research" },
+      cta: { label: "all the secrets", href: "/research" },
     },
     {
       n: "06",

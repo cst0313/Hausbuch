@@ -360,6 +360,7 @@ export default function DashboardPage() {
                 ? `${resolvedIds.size} this session · ${stats.resolved - resolvedIds.size} from audit log`
                 : `${stats.resolved} from audit log`
             }
+            isLast
           />
         </div>
 
@@ -723,17 +724,23 @@ function Stat({
   value,
   delta,
   valueClass,
+  isLast,
 }: {
   label: string;
   value: number | string;
   delta?: string;
   valueClass?: "crit";
+  isLast?: boolean;
 }) {
   return (
     <div
       style={{
-        padding: "18px 24px 18px 0",
-        borderRight: "1px solid var(--border-muted)",
+        // Symmetric padding so the label never butts up against the divider.
+        // The first column doesn't need left-pad (page already provides it);
+        // every other column gets 28px left to give the divider breathing room.
+        padding: "20px 28px",
+        borderRight: isLast ? "none" : "1px solid var(--border-muted)",
+        minWidth: 0,
       }}
     >
       <div
@@ -744,6 +751,9 @@ function Stat({
           fontSize: 10.5,
           color: "var(--fg-dim)",
           marginBottom: 6,
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
         }}
       >
         {label}
@@ -755,6 +765,7 @@ function Stat({
           letterSpacing: "-0.02em",
           color: valueClass === "crit" ? "var(--severity-critical)" : "var(--fg)",
           fontFeatureSettings: '"tnum"',
+          lineHeight: 1.05,
         }}
       >
         {value}
@@ -762,7 +773,12 @@ function Stat({
       {delta && (
         <div
           className="mono"
-          style={{ fontSize: 11, color: "var(--fg-dim)", marginTop: 4 }}
+          style={{
+            fontSize: 11,
+            color: "var(--fg-dim)",
+            marginTop: 6,
+            lineHeight: 1.4,
+          }}
         >
           {delta}
         </div>

@@ -828,12 +828,9 @@ function extractMahnung(text: string): ExtractedFact[] {
     }));
   }
 
-  // The presence of any Mahnung increments incident severity
-  facts.push(buildFact("incident.type", "mahnung", {
-    span: { start: 0, end: 30, quote: text.slice(0, 30) },
-    confidence: 0.9,
-  }));
-
+  // Mahnung is a financial event, not a maintenance incident — surfaced via
+  // the mahnung.* facts above. Writing it as incident.type produced phantom
+  // "incident.mahnung" recs in the dashboard with no actionable contractor.
   return facts;
 }
 
@@ -885,10 +882,9 @@ function extractKuendigung(text: string): ExtractedFact[] {
     }));
   }
 
-  facts.push(buildFact("incident.type", "kuendigung", {
-    span: { start: 0, end: 30, quote: text.slice(0, 30) },
-    confidence: 0.9,
-  }));
+  // Kündigung is a legal event, not a maintenance incident — surfaced via
+  // the legal.kuendigung path in seed.ts. Writing it here as incident.type
+  // produced phantom "incident.kuendigung" recs with no contractor route.
   return facts;
 }
 

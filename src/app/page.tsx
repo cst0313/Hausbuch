@@ -148,7 +148,7 @@ export default function Home() {
           <Stat label="Open recs" value={stats?.open} accent={stats ? stats.critical > 0 : false} />
           <Stat label="Critical" value={stats?.critical} crit />
           <Stat label="Drafts ready" value={stats?.drafts} />
-          <Stat label="Facts in store" value={stats?.facts || stats?.sources || stats?.entities ? (stats?.facts ?? stats?.sources ?? stats?.entities) : "—"} />
+          <Stat label="Facts in store" value={stats?.facts || stats?.sources || stats?.entities ? (stats?.facts ?? stats?.sources ?? stats?.entities) : "—"} isLast />
         </div>
 
         {stats?.latestAction && (
@@ -287,17 +287,21 @@ function Stat({
   value,
   accent,
   crit,
+  isLast,
 }: {
   label: string;
   value?: number | string;
   accent?: boolean;
   crit?: boolean;
+  isLast?: boolean;
 }) {
   return (
     <div
       style={{
-        padding: "20px 24px 20px 0",
-        borderRight: "1px solid var(--border-muted)",
+        // Symmetric padding so the divider line never touches the label.
+        padding: "22px 28px",
+        borderRight: isLast ? "none" : "1px solid var(--border-muted)",
+        minWidth: 0,
       }}
     >
       <div

@@ -278,6 +278,14 @@ function buildIncidentRecommendation(
   contractors: Map<string, Entity>,
   allEntities: Entity[],
 ): Recommendation | null {
+  // Incidents only make sense for the parties who LIVE in or OWN a unit —
+  // tenants, owners, units, buildings, and the WEG itself. When the entity
+  // is a contractor or vendor, an incident.type fact almost always came
+  // from their inbound emails about THEIR work (an Aufzug-vendor's update
+  // mentioning "Aufzug" hit the elevator regex), not a real tenant case.
+  // The dashboard surface for those would have no point of contact for the
+  // status update and just confuses the queue.
+  if (entity.type === "contractor") return null;
   const severity = incidentSeverity(incident.type, incident.status);
 
   // Scope email_chain to ONLY the emails that actually triggered this incident.
@@ -351,9 +359,35 @@ function buildIncidentRecommendation(
   const actions: RecommendedAction[] = [];
 
   if (awaitingReply) {
-    // Surface a single follow-up reminder so the manager knows the case is
-    // open but already touched. No dispatch, no draft.
+    // We've replied to the original report. Surface (a) a tenant-facing
+    // STATUS UPDATE draft so the manager can send a proactive "we're on it"
+    // if the contractor visit is taking longer than expected, plus (b) a
+    // chase-up reminder. Without the status-update draft the dashboard
+    // would have nothing to show in the "suggested email" pane.
     const reporterEmail = findFactValue(entity.id, "identity.email");
+    if (reporterEmail) {
+      actions.push({
+        type: "draft_email",
+        label: `Status update to ${entity.name}`,
+        label_de: `Statusupdate an ${entity.name}`,
+        recipient: {
+          entity_id: entity.id,
+          name: entity.name,
+          email: reporterEmail,
+          role: entity.type,
+        },
+        draft_context: {
+          from: "Huber & Partner Immobilienverwaltung GmbH <info@huber-partner-verwaltung.de>",
+          to: entity.name,
+          to_email: reporterEmail,
+          subject: `Statusupdate: ${title}`,
+          incident_summary: `Statusupdate an den Mieter zum Vorgang "${title}". Wir haben die Meldung erhalten und sind dran; konkreter Termin folgt. Höflich, kein Eingeständnis von Verschulden.`,
+          entity_context: `Betreff: ${title}. Wir haben bereits geantwortet — dies ist ein proaktives Statusupdate.`,
+          language: "de",
+          tone: "formal",
+        },
+      });
+    }
     actions.push({
       type: "follow_up",
       label: `Follow up with ${entity.name} if no reply`,
@@ -800,6 +834,33 @@ function buildLegalRecommendation(
       email_chain: chainForFact(fact),
       actions: awaitingReply
         ? [
+            // Even after the initial Bestätigung, the manager often needs
+            // to send a status update (handover scheduled, deposit refund
+            // process, etc.). Surface a tenant-facing draft as the primary
+            // suggested email so the dashboard pane isn't empty.
+            {
+              type: "draft_email",
+              label: `Status update to ${entity.name}`,
+              label_de: `Statusupdate an ${entity.name}`,
+              recipient: {
+                entity_id: entity.id,
+                name: entity.name,
+                email: findFactValue(entity.id, "identity.email") ?? "",
+                role: entity.type,
+              },
+              draft_context: {
+                from: "Huber & Partner Immobilienverwaltung GmbH <info@huber-partner-verwaltung.de>",
+                to: entity.name,
+                to_email: findFactValue(entity.id, "identity.email") ?? "",
+                subject: `Statusupdate: Kündigung — ${entity.name}`,
+                incident_summary: causeNames
+                  ? `Statusupdate zur eingegangenen Kündigung (Ursache laut Mieter: ${causeNames}). Übergabetermin und nächste Schritte. Höflich, kein Eingeständnis von Verschulden.`
+                  : `Statusupdate zur eingegangenen Kündigung. Übergabetermin und nächste Schritte. Höflich, kein Eingeständnis von Verschulden.`,
+                entity_context: `Mieter: ${entity.name}. Wir haben den Eingang bereits bestätigt — dies ist ein proaktives Statusupdate.`,
+                language: "de",
+                tone: "formal",
+              },
+            } as RecommendedAction,
             ...dispatches,
             handover,
             {

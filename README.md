@@ -77,6 +77,27 @@ To reset the live state to the shipped snapshot:
 curl -X POST http://localhost:3000/api/reset    # truncates tables and re-seeds in place
 ```
 
+## License
+
+Hausbuch is released under the **[Business Source License 1.1](LICENSE)** —
+source-available, *not* open source. In plain English:
+
+| You may | You may not (until the Change Date) |
+|---|---|
+| Read the source | Use it in production at your company |
+| Run it locally for evaluation, research, or learning | Run it as part of a paid product or hosted service you sell |
+| Modify it for your own non-production experiments | Sell, sublicense, or monetize the code or any derivative |
+| Share modified copies under the same license | Repackage it as your own startup's offering |
+
+The license **automatically converts to Apache 2.0 on 2030-04-26** (the Change
+Date), at which point all of the restrictions above lift and the code becomes
+fully open source. Until then, any production / commercial use requires a
+separate license — contact the author.
+
+This is the same model used by Sentry, MariaDB, Couchbase, and HashiCorp
+Terraform: open enough for evaluation, judging, and contribution; closed
+enough that someone else can't trivially turn it into their commercial product.
+
 ## Architecture diagrams
 
 Three drawio files in `docs/diagrams/` cover the system at a glance — open them at

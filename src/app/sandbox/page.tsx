@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Nav } from "@/components/Nav";
 import { UploadInspector } from "@/components/UploadInspector";
+import { AddEntityModal } from "@/components/AddEntityModal";
 
 type Counts = {
   facts: number;
@@ -14,10 +15,23 @@ type Counts = {
   critical: number;
 };
 
+type SandboxRec = {
+  id: string;
+  severity: "critical" | "high" | "medium" | "low";
+  entity_id: string;
+  entity_name: string;
+  category: string;
+  title: string;
+  summary: string;
+  email_chain?: Array<{ source_id: string; title: string; date?: string }>;
+};
+
 export default function SandboxPage() {
   const [counts, setCounts] = useState<Counts | null>(null);
   const [busy, setBusy] = useState<"idle" | "wiping" | "loading-sample">("idle");
   const [message, setMessage] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [recs, setRecs] = useState<SandboxRec[] | null>(null);
   const [refresh, setRefresh] = useState(0);
 
   useEffect(() => {
@@ -35,6 +49,24 @@ export default function SandboxPage() {
         });
       })
       .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [refresh]);
+
+  // Pull recommendations from the same /api/recommendations the dashboard uses,
+  // so the sandbox shows the manager-view of whatever the user has uploaded.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/recommendations")
+      .then((r) => r.json())
+      .then((d) => {
+        if (cancelled) return;
+        setRecs(d?.recommendations ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setRecs([]);
+      });
     return () => {
       cancelled = true;
     };
@@ -184,6 +216,31 @@ export default function SandboxPage() {
               {busy === "loading-sample" ? "Ingesting…" : "Load sample bundle (7 docs)"}
             </button>
             <button
+              onClick={() => setAddOpen(true)}
+              disabled={busy !== "idle"}
+              title="Manually add a tenant, owner, contractor, unit, or building"
+              style={{
+                padding: "9px 14px",
+                borderRadius: 8,
+                border: "1px solid var(--border)",
+                background: "var(--bg)",
+                color: "var(--fg)",
+                fontSize: 13,
+                fontWeight: 500,
+                cursor: busy !== "idle" ? "default" : "pointer",
+                fontFamily: "inherit",
+                whiteSpace: "nowrap",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+              </svg>
+              Add entity
+            </button>
+            <button
               onClick={wipe}
               disabled={busy !== "idle"}
               style={{
@@ -199,7 +256,7 @@ export default function SandboxPage() {
                 whiteSpace: "nowrap",
               }}
             >
-              {busy === "wiping" ? "Wiping…" : "Wipe to empty"}
+              {busy === "wiping" ? "Wiping…" : "Reset sandbox"}
             </button>
           </div>
         </section>
@@ -281,6 +338,10 @@ export default function SandboxPage() {
           <UploadInspector />
         </section>
 
+        {/* Recommendations from whatever has been uploaded — same engine,
+            same shape as /dashboard, scoped to the sandbox state. */}
+        <SandboxRecsPreview recs={recs} />
+
         {/* Quick links */}
         <section
           style={{
@@ -294,7 +355,7 @@ export default function SandboxPage() {
           <QuickLink
             href="/dashboard"
             title="Dashboard"
-            sub="See recommendations on what you uploaded"
+            sub="The full triage view of the seeded corpus"
           />
           <QuickLink
             href="/context/weg%3Aimmanuelkirchstr-26"
@@ -304,11 +365,171 @@ export default function SandboxPage() {
           <QuickLink
             href="/research"
             title="Performance numbers"
-            sub="Why the format the agent reads is 1.6× smaller"
+            sub="How we got Context.md down 90% in tokens"
           />
         </section>
       </main>
+
+      <AddEntityModal
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        onCreated={() => {
+          setAddOpen(false);
+          setRefresh((n) => n + 1);
+        }}
+      />
     </>
+  );
+}
+
+// ── Sandbox dashboard preview ─────────────────────────────────────────────
+
+function SandboxRecsPreview({ recs }: { recs: SandboxRec[] | null }) {
+  if (recs === null) {
+    return null;
+  }
+  if (recs.length === 0) {
+    return (
+      <section
+        style={{
+          marginTop: 36,
+          marginBottom: 36,
+          padding: "20px 22px",
+          borderRadius: 10,
+          border: "1px dashed var(--border)",
+          background: "var(--bg)",
+        }}
+      >
+        <h2
+          className="mono"
+          style={{
+            fontSize: 11,
+            color: "var(--fg-dim)",
+            textTransform: "uppercase",
+            letterSpacing: "0.06em",
+            margin: "0 0 8px",
+            fontWeight: 600,
+          }}
+        >
+          Sandbox dashboard
+        </h2>
+        <p style={{ margin: 0, fontSize: 13, color: "var(--fg-muted)" }}>
+          No recommendations yet. Add entities or upload documents above and the
+          same engine that powers <Link href="/dashboard" style={{ color: "var(--brand)" }}>/dashboard</Link>{" "}
+          will surface what needs attention here.
+        </p>
+      </section>
+    );
+  }
+  const top = recs.slice(0, 8);
+  const sevColor = (s: SandboxRec["severity"]) =>
+    s === "critical"
+      ? "var(--severity-critical)"
+      : s === "high"
+        ? "var(--severity-high)"
+        : s === "medium"
+          ? "var(--severity-medium)"
+          : "var(--severity-low)";
+  return (
+    <section style={{ marginTop: 36, marginBottom: 36 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          justifyContent: "space-between",
+          marginBottom: 14,
+          gap: 16,
+          flexWrap: "wrap",
+        }}
+      >
+        <h2
+          className="mono"
+          style={{
+            fontSize: 11,
+            color: "var(--fg-dim)",
+            textTransform: "uppercase",
+            letterSpacing: "0.06em",
+            margin: 0,
+            fontWeight: 600,
+          }}
+        >
+          Sandbox dashboard · {recs.length} open
+        </h2>
+        <Link
+          href="/dashboard"
+          className="mono"
+          style={{
+            fontSize: 11,
+            color: "var(--brand)",
+            textDecoration: "none",
+          }}
+        >
+          full dashboard →
+        </Link>
+      </div>
+      <div
+        style={{
+          borderTop: "1px solid var(--border)",
+          borderBottom: "1px solid var(--border)",
+        }}
+      >
+        {top.map((rec) => (
+          <div
+            key={rec.id}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "4px minmax(220px, 1.2fr) minmax(180px, 1fr) auto",
+              gap: 16,
+              padding: "12px 0",
+              borderBottom: "1px solid var(--border-muted)",
+              alignItems: "start",
+            }}
+          >
+            <div
+              style={{
+                width: 4,
+                height: 32,
+                borderRadius: 2,
+                background: sevColor(rec.severity),
+              }}
+            />
+            <div>
+              <div style={{ fontSize: 13.5, fontWeight: 500, letterSpacing: "-0.005em" }}>
+                {rec.title}
+              </div>
+              <div className="mono" style={{ fontSize: 11, color: "var(--fg-dim)", marginTop: 2 }}>
+                {rec.entity_name}
+              </div>
+            </div>
+            <div style={{ fontSize: 12, color: "var(--fg-muted)", lineHeight: 1.45 }}>
+              {rec.summary.length > 140 ? rec.summary.slice(0, 140) + "…" : rec.summary}
+            </div>
+            <Link
+              href={`/context/${encodeURIComponent(rec.entity_id)}`}
+              className="mono"
+              style={{
+                fontSize: 11,
+                color: "var(--brand)",
+                textDecoration: "none",
+                whiteSpace: "nowrap",
+                paddingTop: 2,
+              }}
+            >
+              context →
+            </Link>
+          </div>
+        ))}
+      </div>
+      {recs.length > top.length && (
+        <p
+          className="mono"
+          style={{ marginTop: 8, fontSize: 11, color: "var(--fg-dim)" }}
+        >
+          showing {top.length} of {recs.length} · open the full{" "}
+          <Link href="/dashboard" style={{ color: "var(--brand)" }}>dashboard</Link> to triage all
+        </p>
+      )}
+    </section>
   );
 }
 

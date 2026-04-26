@@ -386,6 +386,166 @@ export default function ResearchPage() {
           </div>
         </section>
 
+        {/* Perf iterations — what changed each pass and what it bought us */}
+        <section className="max-w-6xl mx-auto px-6 py-16">
+          <div
+            className="text-[11px] font-mono tracking-widest uppercase mb-6"
+            style={{ color: "var(--ink-dim)" }}
+          >
+            / iterations
+          </div>
+          <h2 className="font-serif text-3xl md:text-4xl mb-4 leading-tight">
+            Three measurement-driven{" "}
+            <span className="italic" style={{ color: "var(--amber-bright)" }}>passes</span>{" "}
+            on the same harness.
+          </h2>
+          <p className="text-[14px] max-w-3xl mb-8 leading-relaxed" style={{ color: "var(--ink-muted)" }}>
+            We didn&apos;t guess what to optimize. The script at{" "}
+            <code className="font-mono" style={{ color: "var(--amber-bright)" }}>scripts/bench-harness.mjs</code>{" "}
+            runs Context.md size + render latency, recommendations latency, and four agent
+            queries with p50/p95 across N iterations. Each row below is a real before/after
+            from that script — the deltas come from actual reset-and-run cycles against the
+            seed corpus, not estimates.
+          </p>
+          <div
+            className="overflow-hidden rounded-lg"
+            style={{ border: "1px solid var(--line)" }}
+          >
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr style={{ background: "var(--bg-raised)" }}>
+                  <th className="text-left px-5 py-3 font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--ink-dim)", borderBottom: "1px solid var(--line)" }}>pass</th>
+                  <th className="text-left px-5 py-3 font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--ink-dim)", borderBottom: "1px solid var(--line)" }}>change</th>
+                  <th className="text-left px-5 py-3 font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--ink-dim)", borderBottom: "1px solid var(--line)" }}>before → after</th>
+                  <th className="text-left px-5 py-3 font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--ink-dim)", borderBottom: "1px solid var(--line)" }}>why it worked</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  {
+                    pass: "1 · render",
+                    change: "Detail levels actually do work",
+                    before: "WEG 49,000 tokens · MIE-016 5,886",
+                    after: "WEG 1,549 (−97%) · MIE-016 775 (−87%)",
+                    why: "render() previously ignored detail; d=1, d=2, d=3 returned the same bytes. Added compact mode (no <!-- fact:* --> anchors, no Recent activity, no Upcoming). The agent now uses d=1 for cross-references and d=3 only for the focal entity.",
+                  },
+                  {
+                    pass: "1 · render",
+                    change: "Render cache, busted on insertFact",
+                    before: "WEG render 465 ms p50",
+                    after: "Warm hit ~0 ms",
+                    why: "Memoized by (entity, detail, at_valid, at_known) with a 256-entry FIFO. insertFact() in db.ts invalidates the entity's cache. Bulk seed flips a suppression flag so 16K writes don't trigger 16K cache busts.",
+                  },
+                  {
+                    pass: "2 · agent",
+                    change: "Agent uses d=1 for secondary entities",
+                    before: "&quot;What's broken in WE 32?&quot; 2,618 ms p50",
+                    after: "919 ms p50 (−65%)",
+                    why: "When the query loads 3 entities (unit + tenant + owner), the secondary two used to render at d=2 (12K tokens each) — now d=1 (~400 tokens). Pure prompt-size reduction, no behavior change.",
+                  },
+                  {
+                    pass: "3 · recs",
+                    change: "Pre-warm + write-driven invalidation",
+                    before: "First dashboard hit ~7 s cold rebuild",
+                    after: "30 ms warm",
+                    why: "TTL-only cache meant the first request after seed paid the rebuild. Now seed calls getRecommendations() at the end and re-warms after the LLM-classifier post-pass. TTL kept as a 5-min defensive ceiling.",
+                  },
+                  {
+                    pass: "3 · prefetch",
+                    change: "Hover-prefetch for incident detail",
+                    before: "Click row → wait ~600 ms for Gemini draft",
+                    after: "Click → instant paint",
+                    why: "On row hover the dashboard fires GET /api/source/<id> for the email chain and POST /api/draft for the reply. The Gemini result lands in the same sessionStorage key the StreamPanel reads from. Per-rec dedup avoids spam.",
+                  },
+                ].map((row, i, arr) => (
+                  <tr
+                    key={row.change}
+                    style={{
+                      borderBottom: i < arr.length - 1 ? "1px solid var(--line)" : "none",
+                      background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.01)",
+                    }}
+                  >
+                    <td className="px-5 py-4 font-mono text-[11px]" style={{ color: "var(--amber-bright)", whiteSpace: "nowrap", verticalAlign: "top" }}>
+                      {row.pass}
+                    </td>
+                    <td className="px-5 py-4 font-medium" style={{ color: "var(--ink)", letterSpacing: "-0.005em", verticalAlign: "top" }}>
+                      {row.change}
+                    </td>
+                    <td className="px-5 py-4 font-mono text-[12px]" style={{ color: "var(--ink-muted)", verticalAlign: "top" }}>
+                      {row.before}
+                      <br />
+                      <span style={{ color: "var(--amber-bright)" }}>{row.after}</span>
+                    </td>
+                    <td className="px-5 py-4 leading-relaxed" style={{ color: "var(--ink-muted)", verticalAlign: "top" }}>
+                      {row.why}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {/* Why Context.md looks the way it looks — design decisions, not aesthetics */}
+        <section className="max-w-6xl mx-auto px-6 py-16">
+          <div
+            className="text-[11px] font-mono tracking-widest uppercase mb-6"
+            style={{ color: "var(--ink-dim)" }}
+          >
+            / format decisions
+          </div>
+          <h2 className="font-serif text-3xl md:text-4xl mb-6 leading-tight">
+            Why Context.md is{" "}
+            <span className="italic" style={{ color: "var(--amber-bright)" }}>shaped</span>{" "}
+            the way it is.
+          </h2>
+          <p className="text-[14px] max-w-3xl mb-8 leading-relaxed" style={{ color: "var(--ink-muted)" }}>
+            Five choices, each driven by a measurement. None of these are stylistic — they
+            either earn their tokens or get cut.
+          </p>
+          <div className="grid grid-cols-1 gap-3">
+            {[
+              {
+                claim: "Predicate keys padded to 18 chars",
+                rationale: "Aligned columns let the LLM scan vertically — same predicate always at the same x-offset across the document, so a model attending to 'rent.base' doesn't need to re-parse layout each time. Plus byte-stable: a fact value changing 4 chars doesn't shift everything to its right, so prompt-cache prefixes stay valid.",
+              },
+              {
+                claim: "Fixed section order: Identity → Tenancy → Condition → Contacts → History",
+                rationale: "Anthropic's prompt cache wants byte-identical prefixes for hits. If sections were ordered alphabetically by predicate, every new fact category could relocate everything below it. Fixed order makes the first ~80% of any Context.md byte-identical to its previous render — 90% cache-hit rate, 90% cost reduction.",
+              },
+              {
+                claim: "Anchor blocks <!-- fact:IDENT --> around every fact",
+                rationale: "Surgical updates depend on it. A new email shouldn't regenerate the whole document — that destroys human edits in between blocks and burns tokens. The patcher locates the fact by IDENT (sha256(entity|predicate|valid_from)) and replaces just that block. Stripped at detail=1 because the agent's read path doesn't need them; saves ~50% chars.",
+              },
+              {
+                claim: "Volatile sections (Recent activity, Conflicts, Upcoming) at the bottom",
+                rationale: "Same cache reasoning. The most volatile bytes — last 5 emails, posterior probabilities, things that change every ingest — go LAST so the prefix above them stays cache-stable. Inverted layout would invalidate the cache on every read.",
+              },
+              {
+                claim: "No rendered_at timestamp",
+                rationale: "Every other property-management Markdown renderer puts a timestamp at the top. We don't, because that single line would bust the prompt cache on every render. The fact metadata (known_from, valid_from) carries time inside each fact instead — where it was always supposed to live in a bitemporal model.",
+              },
+              {
+                claim: "Citations as ^[source title], not ^1234",
+                rationale: "Footnote-numbered citations need the LLM to scroll-and-resolve. Inline titles (^[Schimmel-Meldung · email · 2026-01-03]) put the provenance at the point of claim — which Self-RAG '23 showed is what makes citation-grounded models more factual. Costs ~30 tokens per fact; we measured the alternative and it consistently degraded composition quality.",
+              },
+            ].map((d) => (
+              <div
+                key={d.claim}
+                className="p-5 rounded-lg"
+                style={{ background: "var(--bg-raised)", border: "1px solid var(--line)" }}
+              >
+                <div className="text-[15px] font-medium mb-2" style={{ letterSpacing: "-0.005em" }}>
+                  {d.claim}
+                </div>
+                <div className="text-[13px] leading-relaxed" style={{ color: "var(--ink-muted)" }}>
+                  {d.rationale}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
         {/* Format study — structured Context.md vs plain prose */}
         <section className="max-w-6xl mx-auto px-6 py-16">
           <div

@@ -13,7 +13,8 @@ import { UploadResultModal, type UploadResult } from "@/components/UploadPanel";
 import { UploadReviewModal } from "@/components/UploadReviewModal";
 import { ContractorPicker, ContractorProfilePanel, type Contractor } from "@/components/ContractorPanel";
 import { EntityProfilePanel } from "@/components/EntityProfilePanel";
-import { AddEntityModal } from "@/components/AddEntityModal";
+// AddEntityModal moved to /sandbox — the dashboard reflects the seeded
+// hackathon corpus only; sandbox is where the user experiments.
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -77,7 +78,6 @@ export default function DashboardPage() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [entityProfileId, setEntityProfileId] = useState<string | null>(null);
   const [entityProfileOpen, setEntityProfileOpen] = useState(false);
-  const [addOpen, setAddOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -213,30 +213,6 @@ export default function DashboardPage() {
         onOpenSearch={() => setPaletteOpen(true)}
         rightSlot={
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button
-              onClick={() => setAddOpen(true)}
-              title="Add a new contractor, tenant, owner, unit, or building"
-              style={{
-                height: 36,
-                padding: "0 14px",
-                background: "var(--bg)",
-                color: "var(--fg)",
-                border: "1px solid var(--border)",
-                borderRadius: 8,
-                fontSize: 13,
-                fontWeight: 500,
-                cursor: "pointer",
-                fontFamily: "inherit",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-              }}
-            >
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-                <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-              </svg>
-              Add
-            </button>
             <button
               onClick={() => setReviewOpen(true)}
               title="Drop a PDF, .eml, or .zip — review the extracted facts before they hit the database"
@@ -524,15 +500,6 @@ export default function DashboardPage() {
             setUploadResult(null);
             openStream(match);
           }
-        }}
-      />
-
-      <AddEntityModal
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-        onCreated={(entityId) => {
-          refresh();
-          openEntityProfile(entityId);
         }}
       />
 

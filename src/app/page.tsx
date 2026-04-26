@@ -386,14 +386,18 @@ function DemoNarrative() {
       ),
       body: (
         <>
-          Every claim points back to a source span. PDFs render the actual
-          page with the extracted region outlined. Email facts open the
-          whole thread. Bank facts open the corresponding line of the
-          Sparkasse statement, with rows above and below for context. No
-          model is paraphrasing — provenance lives at the storage layer.
+          Every claim on a Context.md page points back to a source span.
+          PDFs render the actual page with the extracted region outlined.
+          Email facts open the whole thread. Bank facts open the
+          corresponding line of the Sparkasse statement, with rows above
+          and below for context. No model is paraphrasing — provenance
+          lives at the storage layer.
         </>
       ),
-      cta: { label: "Inspect the graph", href: "/graph" },
+      cta: {
+        label: "Open Edeltraud's Context.md",
+        href: "/context/tenant:MIE-017",
+      },
     },
     {
       n: "05",

@@ -42,19 +42,19 @@ const pendingClassifications: PendingClassification[] = [];
 
 /**
  * Body-hash dedup index. The synthetic hackathon dataset reuses the same
- * tenant-email body across multiple timestamps — Louise Ladeck has 4
- * identical "Wasserschaden Bad" emails over 2 months, 3 of them within
- * 3 days of each other; same pattern across the corpus. The first
- * occurrence is real; the next ones inside the same window are template
- * noise.
+ * tenant-email body across many timestamps — Magrit Mitschke has six
+ * byte-identical "Ruhestörung" emails spread over 16 months; Louise
+ * Ladeck has the same pattern for "Wasserschaden Bad". A real human
+ * doesn't write the exact same 200-char paragraph six times verbatim —
+ * if the bytes match, the second copy is template noise.
  *
- * Rule: same (entity, body-hash) within DEDUP_WINDOW_DAYS → drop the
- * later one. Wider intervals are kept because a tenant genuinely
- * re-reporting an unresolved issue 2 months later IS signal we want.
+ * Earlier we tried a 14-day window so genuine re-reports of unresolved
+ * issues stayed visible, but the dataset's templates always reuse the
+ * EXACT bytes (real re-reports vary in wording). Switched to: byte-
+ * identical body per entity → drop every copy after the first,
+ * regardless of how far apart they are.
  */
-const emailBodyIndex = new Map<string, number[]>(); // key=entity|hash → epoch-ms list
-const DEDUP_WINDOW_DAYS = 14;
-const DEDUP_WINDOW_MS = DEDUP_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+const seenBodyHashes = new Set<string>();
 
 // djb2 — short, non-cryptographic, deterministic. Same body always yields
 // the same key; we only need collision-resistance within one entity.
@@ -67,20 +67,11 @@ function bodyHash(body: string): string {
   return (h >>> 0).toString(36);
 }
 
-function isDuplicateBody(entityId: string, body: string, atIso: string): boolean {
+function isDuplicateBody(entityId: string, body: string): boolean {
   if (!body || body.length < 40) return false; // empty / one-liner — too short to dedupe reliably
   const key = `${entityId}|${bodyHash(body)}`;
-  const ts = Date.parse(atIso);
-  if (!Number.isFinite(ts)) return false;
-  const seen = emailBodyIndex.get(key);
-  if (!seen) {
-    emailBodyIndex.set(key, [ts]);
-    return false;
-  }
-  for (const prev of seen) {
-    if (Math.abs(prev - ts) <= DEDUP_WINDOW_MS) return true;
-  }
-  seen.push(ts);
+  if (seenBodyHashes.has(key)) return true;
+  seenBodyHashes.add(key);
   return false;
 }
 
@@ -533,12 +524,13 @@ function importSingleEmail(
     const entityId = emailToEntity.get(relevantAddr) ?? ENTITY;
     const ingestedAt = headers.date || new Date().toISOString();
 
-    // Drop duplicate-body emails inside a 14-day window — the dataset reuses
-    // template bodies (Louise Ladeck had 4 identical Wasserschaden emails in
-    // a single fortnight). Keeping all of them inflated the email_chain on
-    // her water-damage rec to 4 lines that read identically. The first
-    // occurrence is kept; later identical bodies are silently skipped.
-    if (isDuplicateBody(entityId, body, ingestedAt)) {
+    // Drop byte-identical email bodies per entity, regardless of how far
+    // apart in time. Earlier we kept duplicates outside a 14-day window so
+    // genuine re-reports stayed visible, but every "duplicate" in this
+    // corpus is template reuse — a real human doesn't write the exact
+    // same 200-char paragraph 6 times. The first occurrence is kept;
+    // every later identical body is silently skipped.
+    if (isDuplicateBody(entityId, body)) {
       return;
     }
 

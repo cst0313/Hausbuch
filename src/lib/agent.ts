@@ -143,11 +143,14 @@ export async function runAgent(input: AgentInput): Promise<AgentResponse> {
     : `${totalFacts} Fakten aus ${entitiesAccessed.length} Entitäten geladen.`);
 
   // ── Step 3: Check for relevant recommendations ���───────────────────
+  // The previous filter ("entity loaded OR last-name appears in message")
+  // pulled in 7 unrelated recs whenever the question mentioned the tenant —
+  // asking about Magrit's rent surfaced her mold + lock + heating cases.
+  // The new rule scores each rec's TOPIC against the question and only
+  // keeps recs whose topic the question is plausibly about.
   const allRecs = getRecommendations();
-  const relevantRecs = allRecs.filter(r =>
-    entitiesAccessed.includes(r.entity_id) ||
-    input.message.toLowerCase().includes(r.entity_name.toLowerCase().split(" ").pop() ?? "")
-  ).slice(0, 5);
+  const queryKind = classifyQuery(input.message);
+  const relevantRecs = filterRelevantRecs(allRecs, input.message, entitiesAccessed, queryKind);
 
   if (relevantRecs.length > 0) {
     step("analyzing", en
@@ -172,7 +175,11 @@ export async function runAgent(input: AgentInput): Promise<AgentResponse> {
   });
 
   // ── Step 5: Generate suggestions ──────────────────────────────────
-  const suggestions = generateSuggestions(input.message, relevantRecs, relatedEntities);
+  // Suggestions follow the same relevance gate as the rec list — if the
+  // question wasn't about a topic the rec engine can act on, we surface
+  // nothing rather than a confusing "Schlüsseldienst beauftragen" on a
+  // rent-balance question.
+  const suggestions = generateSuggestions(relevantRecs, queryKind);
   if (suggestions.length > 0) {
     step("suggesting", en
       ? `${suggestions.length} recommended next steps.`
@@ -294,59 +301,157 @@ Heute ist der ${new Date().toISOString().slice(0, 10)}.`;
 
 // ── Suggestion generation ───────────────────────────────────────────────────
 
-function generateSuggestions(
-  message: string,
-  recs: Recommendation[],
-  entities: Entity[],
-): AgentSuggestion[] {
-  const suggestions: AgentSuggestion[] = [];
-  const msg = message.toLowerCase();
+/**
+ * Three classes of question, each with a different suggestion policy:
+ *
+ *   informational  → "what is X / who is X / how much / wann ist"
+ *                    Pure lookups. Suggestions are noise; surface nothing.
+ *
+ *   actionable     → "send / draft / dispatch / escalate / Antwort schicken"
+ *                    The user wants to DO something. Surface up to 3
+ *                    suggestions from the relevant recs.
+ *
+ *   queue          → "what's open / critical / pending / kritisch / offen"
+ *                    Triage view. Surface up to 5 ranked suggestions.
+ *
+ *   ambiguous      → none of the above. Default-empty unless a rec scores
+ *                    very high on topic overlap with the question.
+ */
+type QueryKind = "informational" | "actionable" | "queue" | "ambiguous";
 
-  // From open recommendations
-  for (const rec of recs.slice(0, 3)) {
-    for (const action of rec.actions.slice(0, 2)) {
-      if (action.type === "dispatch_contractor" && action.draft_context) {
-        suggestions.push({
-          type: "dispatch",
-          label: action.label_de,
-          detail: `${rec.title} — ${rec.entity_name}`,
-          draft_context: action.draft_context,
-        });
-      } else if (action.type === "draft_email" && action.draft_context) {
-        suggestions.push({
-          type: "draft_email",
-          label: action.label_de,
-          detail: `${rec.title}`,
-          draft_context: action.draft_context,
-        });
-      } else if (action.type === "escalate") {
-        suggestions.push({
-          type: "escalate",
-          label: action.label_de,
-          detail: rec.summary.slice(0, 100),
-        });
-      }
+function classifyQuery(message: string): QueryKind {
+  const m = message.toLowerCase();
+
+  // Action verbs — German + English. If present, the user wants to act.
+  if (/\b(send|dispatch|draft|schedule|escalate|reply|respond|fix|reparier|beauftrag|drafte|schick|antwort|sende|verfasse|eskalier)\w*\b/.test(m)) {
+    return "actionable";
+  }
+
+  // Queue / triage verbs.
+  if (/\b(open|critical|pending|attention|priorit|today|offen|kritisch|prior|heute|dringend|akut|backlog|inbox|queue)\w*\b/.test(m)) {
+    return "queue";
+  }
+
+  // Pure information requests.
+  if (/^\s*(what|who|when|where|how much|how many|which|why|is|are|wer|was|wann|wo|wieviel|wie viel|wieviele|wie viele|ist|sind|welche)\b/.test(m)) {
+    return "informational";
+  }
+
+  return "ambiguous";
+}
+
+/**
+ * Topic keywords per rec category. If the question mentions any of these,
+ * the rec is on-topic. Drives both the rec list and the suggestions.
+ */
+const TOPIC_KEYWORDS: Record<string, RegExp> = {
+  "incident.water_damage": /\b(wasser|wasserschaden|leck|tropf|rohrbruch|feucht|nasse?|durchnässt|water|leak|flood)\w*\b/i,
+  "incident.mold": /\b(schimmel|mold|mildew)\w*\b/i,
+  "incident.heating": /\b(heizung|thermostat|kalt|warmwasser|boiler|heating)\w*\b/i,
+  "incident.lock_issue": /\b(schloss|schlüssel|schluessel|tür|tuer|haustür|haustuer|schließanlage|lock|key)\w*\b/i,
+  "incident.elevator": /\b(aufzug|fahrstuhl|lift|elevator)\w*\b/i,
+  "incident.noise": /\b(lärm|laerm|ruhestörung|ruhestoerung|noise)\w*\b/i,
+  "incident.electrical": /\b(strom|steckdose|elektr|sicherung|stromausfall)\w*\b/i,
+  "legal.mietminderung": /\b(mietminderung|minderung|miete\s+minder|rent\s+reduction)\w*\b/i,
+  "legal.kuendigung": /\b(kündigung|kuendigung|termination|terminat|move[\s-]?out|auszug)\w*\b/i,
+};
+
+/**
+ * Filter recs strictly by topic + entity relevance. Pure entity overlap
+ * (the rec mentions an entity we loaded) is NOT enough — that pulled in
+ * a tenant's full backlog of unrelated cases on every rent question.
+ */
+function filterRelevantRecs(
+  allRecs: Recommendation[],
+  message: string,
+  entitiesAccessed: string[],
+  kind: QueryKind,
+): Recommendation[] {
+  if (kind === "informational") return [];
+  // Queue/triage: return all open recs ranked by severity, no topic filter.
+  if (kind === "queue") {
+    const sevOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+    return [...allRecs]
+      .sort((a, b) => sevOrder[a.severity] - sevOrder[b.severity])
+      .slice(0, 5);
+  }
+
+  // Actionable / ambiguous: require BOTH topic and entity match.
+  const m = message.toLowerCase();
+  const scored = allRecs.map((r) => {
+    const topicRe = TOPIC_KEYWORDS[r.category];
+    const topicMatch = topicRe ? topicRe.test(m) : false;
+    const entityMatch = entitiesAccessed.includes(r.entity_id);
+    let score = 0;
+    if (topicMatch) score += 5;
+    if (entityMatch) score += 2;
+    // Ambiguous queries need stronger evidence — actionable can act on a
+    // single signal (e.g. "send the Mietminderung reply" with just the
+    // category word).
+    return { rec: r, score };
+  });
+
+  const threshold = kind === "actionable" ? 3 : 5;
+  return scored
+    .filter((s) => s.score >= threshold)
+    .sort((a, b) => b.score - a.score)
+    .map((s) => s.rec)
+    .slice(0, 5);
+}
+
+function generateSuggestions(
+  recs: Recommendation[],
+  kind: QueryKind,
+): AgentSuggestion[] {
+  // No relevant recs → no suggestions. The point: never recommend an
+  // action that doesn't fit the question. Empty is a valid answer.
+  if (recs.length === 0) return [];
+  // Informational queries already filtered to [] in filterRelevantRecs;
+  // belt-and-braces here in case a future caller hands us recs anyway.
+  if (kind === "informational") return [];
+
+  const suggestions: AgentSuggestion[] = [];
+  const cap = kind === "queue" ? 5 : 3;
+
+  for (const rec of recs.slice(0, cap)) {
+    // One suggestion per rec — pick the highest-leverage action available.
+    const action =
+      rec.actions.find((a) => a.type === "draft_email" && a.draft_context) ??
+      rec.actions.find((a) => a.type === "dispatch_contractor" && a.draft_context) ??
+      rec.actions.find((a) => a.type === "escalate") ??
+      rec.actions[0];
+    if (!action) continue;
+
+    if (action.type === "dispatch_contractor" && action.draft_context) {
+      suggestions.push({
+        type: "dispatch",
+        label: action.label_de,
+        detail: `${rec.title} — ${rec.entity_name}`,
+        draft_context: action.draft_context,
+      });
+    } else if (action.type === "draft_email" && action.draft_context) {
+      suggestions.push({
+        type: "draft_email",
+        label: action.label_de,
+        detail: rec.title,
+        draft_context: action.draft_context,
+      });
+    } else if (action.type === "escalate") {
+      suggestions.push({
+        type: "escalate",
+        label: action.label_de,
+        detail: rec.summary.slice(0, 100),
+      });
+    } else if (action.type === "follow_up") {
+      suggestions.push({
+        type: "follow_up",
+        label: action.label_de,
+        detail: rec.title,
+      });
     }
   }
 
-  // Query-specific suggestions
-  if (msg.includes("schimmel") || msg.includes("mold") || msg.includes("wasserschaden")) {
-    suggestions.push({
-      type: "investigate",
-      label: "Nachbaruntersuchung empfohlen",
-      detail: "Bei Schimmel/Wasserschaden: angrenzende Einheiten prüfen",
-    });
-  }
-
-  if (msg.includes("schlüssel") || msg.includes("schloss") || msg.includes("tür")) {
-    suggestions.push({
-      type: "dispatch",
-      label: "Schlüsseldienst beauftragen",
-      detail: "Hausmeister Mueller oder externen Schlüsseldienst kontaktieren",
-    });
-  }
-
-  return suggestions.slice(0, 5);
+  return suggestions.slice(0, cap);
 }
 
 // ��─ Helpers ─────────────────────────────────────────────────────────────────

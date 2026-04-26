@@ -365,6 +365,11 @@ function buildIncidentRecommendation(
     // chase-up reminder. Without the status-update draft the dashboard
     // would have nothing to show in the "suggested email" pane.
     const reporterEmail = findFactValue(entity.id, "identity.email");
+    // If a dispatch fact exists, name the contractor in the draft so the
+    // email reads "we have already contacted X" instead of the generic
+    // "we are reviewing". Driven by /api/dispatch writing
+    // dispatch.contractor when the manager clicks Dispatch in the UI.
+    const dispatchedTo = findFactValue(entity.id, "dispatch.contractor");
     if (reporterEmail) {
       actions.push({
         type: "draft_email",
@@ -381,8 +386,12 @@ function buildIncidentRecommendation(
           to: entity.name,
           to_email: reporterEmail,
           subject: `Statusupdate: ${title}`,
-          incident_summary: `Statusupdate an den Mieter zum Vorgang "${title}". Wir haben die Meldung erhalten und sind dran; konkreter Termin folgt. Höflich, kein Eingeständnis von Verschulden.`,
-          entity_context: `Betreff: ${title}. Wir haben bereits geantwortet — dies ist ein proaktives Statusupdate.`,
+          incident_summary: dispatchedTo
+            ? `Statusupdate an den Mieter zum Vorgang "${title}". Wir haben bereits ${dispatchedTo} mit der Behebung beauftragt; ein konkreter Termin folgt. Höflich, kein Eingeständnis von Verschulden.`
+            : `Statusupdate an den Mieter zum Vorgang "${title}". Wir haben die Meldung erhalten und prüfen die nächsten Schritte; konkreter Termin folgt. Höflich, kein Eingeständnis von Verschulden.`,
+          entity_context: dispatchedTo
+            ? `Betreff: ${title}. Fachbetrieb beauftragt: ${dispatchedTo}.`
+            : `Betreff: ${title}. Wir haben bereits geantwortet — dies ist ein proaktives Statusupdate.`,
           language: "de",
           tone: "formal",
         },
@@ -687,6 +696,10 @@ function buildLegalRecommendation(
       // legacy ordering (escalate / dispatch / draft).
       actions: (() => {
         const dispatches = rootCauses ? rootCauseDispatchActions(rootCauses, contractors) : [];
+        // If a dispatch fact already exists, name the contractor in the
+        // tenant-facing draft. Replaces the speculative "we are reviewing"
+        // wording with concrete "we have already contacted X".
+        const dispatchedTo = findFactValue(entity.id, "dispatch.contractor");
         // The reply draft. In awaitingReply state we still keep ONE
         // tenant-facing draft as the primary suggested email — a status
         // update that says "we're on it, contractor dispatched". Without
@@ -716,13 +729,21 @@ function buildLegalRecommendation(
               ? `Statusupdate: Mietminderung — ${entity.name}`
               : `Re: Mietminderung — ${entity.name}`,
             incident_summary: awaitingReply
-              ? (causeNames
-                  ? `Statusupdate an den Mieter: Erhalt der Mietminderungs-Ankündigung (${pct}%) wegen ${causeNames} bestätigt. Fachbetrieb ist bereits beauftragt; konkreter Reparaturtermin folgt innerhalb der nächsten Werktage. Höflich, kein Eingeständnis von Verschulden.`
-                  : `Statusupdate an den Mieter: Erhalt der Mietminderungs-Ankündigung (${pct}%) bestätigt. Sachverhalt wird geprüft; konkreter Reparaturtermin folgt innerhalb der nächsten Werktage. Höflich, kein Eingeständnis von Verschulden.`)
-              : (causeNames
-                  ? `Mietminderung ${pct}% angekündigt wegen ${causeNames}. Wir haben den Fachbetrieb beauftragt und kümmern uns umgehend um die Mängelbehebung.`
-                  : `Mietminderung ${pct}% angekündigt wegen Baumängeln. Wir kümmern uns umgehend um die Mängelbehebung.`),
-            entity_context: `Mieter: ${entity.name}. Ankündigung: ${pct}% Minderung.${awaitingReply ? " Wir haben bereits geantwortet — dies ist ein proaktives Statusupdate." : ""}`,
+              ? (dispatchedTo
+                  ? (causeNames
+                      ? `Statusupdate an den Mieter: Erhalt der Mietminderungs-Ankündigung (${pct}%) wegen ${causeNames} bestätigt. Wir haben bereits ${dispatchedTo} mit der Mängelbehebung beauftragt; ein konkreter Reparaturtermin folgt innerhalb der nächsten Werktage. Höflich, kein Eingeständnis von Verschulden.`
+                      : `Statusupdate an den Mieter: Erhalt der Mietminderungs-Ankündigung (${pct}%) bestätigt. Wir haben bereits ${dispatchedTo} mit der Behebung beauftragt; ein konkreter Reparaturtermin folgt innerhalb der nächsten Werktage. Höflich, kein Eingeständnis von Verschulden.`)
+                  : (causeNames
+                      ? `Statusupdate an den Mieter: Erhalt der Mietminderungs-Ankündigung (${pct}%) wegen ${causeNames} bestätigt. Wir prüfen die nächsten Schritte und melden uns mit einem konkreten Reparaturtermin innerhalb der nächsten Werktage. Höflich, kein Eingeständnis von Verschulden.`
+                      : `Statusupdate an den Mieter: Erhalt der Mietminderungs-Ankündigung (${pct}%) bestätigt. Sachverhalt wird geprüft; konkreter Reparaturtermin folgt innerhalb der nächsten Werktage. Höflich, kein Eingeständnis von Verschulden.`))
+              : (dispatchedTo
+                  ? `Mietminderung ${pct}% angekündigt wegen ${causeNames ?? "Baumängeln"}. Wir haben bereits ${dispatchedTo} mit der Behebung beauftragt.`
+                  : (causeNames
+                      ? `Mietminderung ${pct}% angekündigt wegen ${causeNames}. Wir haben den Fachbetrieb beauftragt und kümmern uns umgehend um die Mängelbehebung.`
+                      : `Mietminderung ${pct}% angekündigt wegen Baumängeln. Wir kümmern uns umgehend um die Mängelbehebung.`)),
+            entity_context: dispatchedTo
+              ? `Mieter: ${entity.name}. Ankündigung: ${pct}% Minderung. Fachbetrieb beauftragt: ${dispatchedTo}.`
+              : `Mieter: ${entity.name}. Ankündigung: ${pct}% Minderung.${awaitingReply ? " Wir haben bereits geantwortet — dies ist ein proaktives Statusupdate." : ""}`,
             language: "de",
             tone: "formal",
           },

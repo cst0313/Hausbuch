@@ -320,9 +320,33 @@ export default function ResearchPage() {
               {
                 title: "Body-hash dedup for synthetic email duplicates",
                 bullets: [
-                  "Discovered Louise Ladeck's water-damage thread had 4 byte-identical emails (Sept + 3 within 3 days in Nov).",
-                  "Pattern is dataset-wide: the corpus generator reuses ~30 template bodies across timestamps.",
-                  "Fix: djb2-hash the normalized body, suppress duplicates within (entity, 14-day window). Wider intervals kept — a tenant re-reporting unresolved leak after 7 weeks IS real signal.",
+                  "Louise Ladeck had 4 byte-identical Wasserschaden emails; Magrit Mitschke had 6 identical Ruhestörung bodies spread over 16 months.",
+                  "Started with a 14-day window (preserve genuine re-reports), then tightened to byte-identical-per-entity always — every duplicate in this corpus was template noise; real re-reports vary in wording.",
+                  "Result: 6,143 → 4,447 email sources (-28%); Magrit's duplicate-body groups: 10 → 0.",
+                ],
+              },
+              {
+                title: "Write-driven cache on /api/graph",
+                bullets: [
+                  "Building the graph payload walks 133 entities × 16K facts and computes per-entity fact + open-incident counts. Cold call ~275ms.",
+                  "Process-wide cache keyed by a (entities · facts · sources) row-count signature. Any insertFact write changes the signature → next call rebuilds; otherwise served from memory under a 5-min TTL.",
+                  "Measured: 275ms cold → 11ms warm (25× speedup). Plus a sessionStorage cache on the client so re-entering the tab paints from cache while the server refresh runs in the background.",
+                ],
+              },
+              {
+                title: "Dispatch as a durable fact",
+                bullets: [
+                  "Clicking 'Dispatch contractor' used to write a free-text note source — the rec engine had no structured way to know the dispatch had happened.",
+                  "POST /api/dispatch now writes three facts: dispatch.contractor (name), dispatch.contractor_id, and incident.status='dispatched' (supersedes 'reported').",
+                  "Status-update drafts read dispatch.contractor and switch from speculative 'we are reviewing' to concrete 'we have already contacted Sanitär Schulze'. Applied to both incident and Mietminderung paths.",
+                ],
+              },
+              {
+                title: "Conservative agent suggestions",
+                bullets: [
+                  "Pure information questions ('what is X', 'who lives in Y') return zero suggestions — recommending an action that doesn't fit the question is worse than recommending nothing.",
+                  "Actionable queries (send / dispatch / draft / escalate) score recs by topic-keyword + entity match; only above-threshold matches surface.",
+                  "Queue queries (open / critical / today) return all open recs ranked by severity. Hardcoded keyword fallbacks removed.",
                 ],
               },
             ].map((c) => (

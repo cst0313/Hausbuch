@@ -432,20 +432,23 @@ export default function DashboardPage() {
         onClose={() => setPickerOpen(false)}
         onDispatch={(c: Contractor) => {
           setPickerOpen(false);
-          // Could record an action; for now just close.
-          fetch("/api/ingest", {
+          // Write the dispatch as a durable fact so the next status-update
+          // draft can say "we have already contacted <contractor>" rather
+          // than the generic "we are reviewing the matter". /api/dispatch
+          // writes dispatch.contractor + incident.status=dispatched.
+          fetch("/api/dispatch", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              entity: streamRec?.entity_id ?? "weg:immanuelkirchstr-26",
-              source: {
-                kind: "note",
-                title: `Job order sent to ${c.name}`,
-                raw_excerpt: `Manager dispatched ${c.name} for ${streamRec?.title ?? "open issue"} (reputation ${c.reputation.score.toFixed(2)} ${c.reputation.band}).`,
-                source_prior: 0.95,
-              },
+              entity_id: streamRec?.entity_id ?? "weg:immanuelkirchstr-26",
+              contractor_id: c.id,
+              contractor_name: c.name,
+              incident_type: streamRec?.category?.replace(/^incident\./, ""),
+              note: `Manager dispatched ${c.name} for ${streamRec?.title ?? "open issue"} (reputation ${c.reputation.score.toFixed(2)} ${c.reputation.band}).`,
             }),
-          }).catch(() => {});
+          })
+            .then(() => refresh())
+            .catch(() => {});
         }}
         onOpenProfile={(c: Contractor) => {
           setPickerOpen(false);

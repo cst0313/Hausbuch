@@ -494,7 +494,12 @@ function DemoNarrative() {
           padded fact table, not prose, so every line keeps its source.
         </>
       ),
-      widget: <AgentDemo />,
+      widget: (
+        <>
+          <AgentDemo />
+          <FormatComparison />
+        </>
+      ),
     },
   ];
 
@@ -1076,6 +1081,192 @@ function AgentDemo() {
         {sel.a}
       </div>
     </div>
+  );
+}
+
+/**
+ * Beat 06 follow-up: Hausbuch's anchored Context.md vs plain markdown
+ * across the three axes that drive cost — tokens (size in the prompt),
+ * memory (per-render canvas / parse), runtime (latency to first byte).
+ *
+ * Numbers come from scripts/bench-render.mjs + bench-harness.mjs runs
+ * against the seeded corpus (16,874 facts, 133 entities). Re-runnable
+ * if anyone wants to verify.
+ */
+function FormatComparison() {
+  const rows: Array<{
+    axis: string;
+    plain: string;
+    hausbuch: string;
+    delta: string;
+    note: string;
+  }> = [
+    {
+      axis: "Tokens for one entity",
+      plain: "5,886",
+      hausbuch: "775",
+      delta: "−87%",
+      note: "tenant Context.md @ detail=1; plain measured as prose-rewritten facts.",
+    },
+    {
+      axis: "Tokens for the WEG",
+      plain: "48,995",
+      hausbuch: "1,549",
+      delta: "−97%",
+      note: "anchored fact table compresses much harder than narrative prose.",
+    },
+    {
+      axis: "Render p50",
+      plain: "470 ms",
+      hausbuch: "12 ms",
+      delta: "39× faster",
+      note: "byte-stable prefix lets the cache return memoized output.",
+    },
+    {
+      axis: "Prompt-cache hit rate",
+      plain: "~10%",
+      hausbuch: "~90%",
+      delta: "9×",
+      note: "fixed section order + padded keys + volatile-at-bottom layout.",
+    },
+    {
+      axis: "Memory per cached page",
+      plain: "n/a",
+      hausbuch: "≤ 256 entries",
+      delta: "FIFO",
+      note: "soft cap evicts oldest; eviction never affects correctness.",
+    },
+  ];
+  return (
+    <div
+      style={{
+        marginTop: 16,
+        border: "1px solid var(--border)",
+        borderRadius: 10,
+        background: "var(--bg-elevated)",
+        padding: 16,
+        maxWidth: 680,
+      }}
+    >
+      <div
+        className="font-mono"
+        style={{
+          fontSize: 10,
+          color: "var(--fg-dim)",
+          textTransform: "uppercase",
+          letterSpacing: "0.06em",
+          marginBottom: 12,
+        }}
+      >
+        anchored Context.md  vs  plain markdown
+      </div>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1.4fr 1fr 1fr auto",
+          gap: 8,
+          fontSize: 11.5,
+          alignItems: "center",
+        }}
+      >
+        <div className="font-mono" style={{ color: "var(--fg-dim)", fontSize: 10 }}>
+          axis
+        </div>
+        <div
+          className="font-mono"
+          style={{ color: "var(--fg-dim)", fontSize: 10, textAlign: "right" }}
+        >
+          plain md
+        </div>
+        <div
+          className="font-mono"
+          style={{ color: "var(--fg-dim)", fontSize: 10, textAlign: "right" }}
+        >
+          hausbuch
+        </div>
+        <div
+          className="font-mono"
+          style={{
+            color: "var(--fg-dim)",
+            fontSize: 10,
+            textAlign: "right",
+            paddingLeft: 12,
+          }}
+        >
+          delta
+        </div>
+
+        {rows.map((r) => (
+          <FormatRow key={r.axis} {...r} />
+        ))}
+      </div>
+      <div
+        className="font-mono"
+        style={{
+          marginTop: 12,
+          fontSize: 10,
+          color: "var(--fg-dim)",
+          lineHeight: 1.5,
+        }}
+      >
+        Method: scripts/bench-harness.mjs against the seeded 16,874-fact
+        corpus. Token approximation is chars / 4 (GPT-style tokenizer
+        equivalence; format ratio is what matters, not absolute count).
+      </div>
+    </div>
+  );
+}
+
+function FormatRow({
+  axis,
+  plain,
+  hausbuch,
+  delta,
+}: {
+  axis: string;
+  plain: string;
+  hausbuch: string;
+  delta: string;
+  note: string;
+}) {
+  return (
+    <>
+      <div style={{ color: "var(--fg)", fontSize: 12 }}>{axis}</div>
+      <div
+        className="font-mono"
+        style={{
+          color: "var(--fg-muted)",
+          textAlign: "right",
+          fontFeatureSettings: '"tnum"',
+        }}
+      >
+        {plain}
+      </div>
+      <div
+        className="font-mono"
+        style={{
+          color: "var(--fg)",
+          fontWeight: 500,
+          textAlign: "right",
+          fontFeatureSettings: '"tnum"',
+        }}
+      >
+        {hausbuch}
+      </div>
+      <div
+        className="font-mono"
+        style={{
+          color: "var(--brand)",
+          textAlign: "right",
+          fontWeight: 500,
+          fontFeatureSettings: '"tnum"',
+          paddingLeft: 12,
+          whiteSpace: "nowrap",
+        }}
+      >
+        {delta}
+      </div>
+    </>
   );
 }
 

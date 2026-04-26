@@ -13,7 +13,18 @@
  * Partner tech: Google DeepMind (Gemini) for reasoning.
  */
 
-import { db, getAllFactsForEntity, getEntity, listEntities } from "./db";
+import {
+  db,
+  getAllFactsForEntity,
+  getEntity,
+  listEntities,
+  insertFact,
+  insertSource,
+  ident,
+  newFactId,
+  newSourceId,
+  logEvent,
+} from "./db";
 import { render } from "./renderer";
 import { compose } from "./llm/gemini";
 import { recordAction } from "./actions";
@@ -371,45 +382,175 @@ function extractCitations(text: string): string[] {
 
 // ── Knowledge update (user sends an update, not a question) ─────────────────
 
+/**
+ * Process a freeform update from the manager and ACTUALLY edit the fact
+ * store. The previous version only echoed Gemini's extraction; now we:
+ *   1. Resolve the target entity from the message (or input.entity_id)
+ *   2. Ask Gemini for a structured patch: predicate, value, valid_from
+ *   3. Write the fact + a synthetic Source row so the change is auditable
+ *
+ * Bitemporal semantics: each new fact gets its own ident, so prior facts
+ * with the same (entity, predicate) are superseded automatically by the
+ * existing reconciliation pass. "Tenant moved out today" becomes a
+ * tenancy.end fact with valid_from=today, which closes the active tenancy
+ * cleanly without rewriting history.
+ */
 export async function processUpdate(input: AgentInput): Promise<AgentResponse> {
   const t0 = performance.now();
   const steps: AgentStep[] = [];
 
-  steps.push({ type: "thinking", content: `Verarbeite Update: "${input.message.slice(0, 80)}"`, ts: new Date().toISOString() });
+  steps.push({
+    type: "thinking",
+    content: `Verarbeite Update: "${input.message.slice(0, 80)}"`,
+    ts: new Date().toISOString(),
+  });
 
-  // Use Gemini to extract structured facts from the freeform update
-  const extractPrompt = `Extrahiere strukturierte Fakten aus dieser Nachricht eines Hausverwalters.
-Nachricht: "${input.message}"
-${input.entity_id ? `Kontext-Entität: ${input.entity_id}` : ""}
+  // ── 1. Resolve target entity ────────────────────────────────────────
+  const targetEntity = input.entity_id ? getEntity(input.entity_id) : null;
+  const candidates = findRelatedEntities(input.message, targetEntity);
+  const resolved = candidates[0] ?? targetEntity;
 
-Antworte im Format:
-FAKT: [predicate] = [value] (für Entität [entity_id])
-AKTION: [was als nächstes zu tun ist]
+  if (!resolved) {
+    return {
+      answer: "Konnte die Entität in der Nachricht nicht eindeutig identifizieren. Bitte Name oder ID nennen.",
+      citations: [],
+      steps,
+      suggestions: [],
+      entities_accessed: [],
+      facts_used: 0,
+      model: "no-llm",
+      latency_ms: Math.round(performance.now() - t0),
+    };
+  }
+  steps.push({
+    type: "searching",
+    content: `Entität aufgelöst: ${resolved.name} (${resolved.id})`,
+    ts: new Date().toISOString(),
+  });
 
-Nur echte Fakten extrahieren. Keine Vermutungen.`;
+  // ── 2. Ask Gemini for a structured patch ────────────────────────────
+  // JSON-mode output forces a parseable response. The closed predicate
+  // vocabulary keeps the agent from inventing schema.
+  const today = new Date().toISOString().slice(0, 10);
+  const extractPrompt = `You convert a property manager's freeform update into ONE structured fact patch.
 
-  const result = await compose({ prompt: extractPrompt, meta: { entity: input.entity_id } });
+Today: ${today}
+Target entity: ${resolved.id} (${resolved.type}: ${resolved.name})
+Update: "${input.message}"
 
-  steps.push({ type: "analyzing", content: "Fakten aus Update extrahiert.", ts: new Date().toISOString() });
-  steps.push({ type: "learning", content: "Update im Kontext gespeichert.", ts: new Date().toISOString() });
+Pick ONE predicate from this closed list, based on what the update means:
+  - tenancy.end           — tenant has moved out / lease ended (value = ISO date)
+  - tenancy.start         — new tenancy begins (value = ISO date)
+  - unit.tenant           — change of tenant assignment (value = tenant id or name)
+  - identity.email        — corrected/new email address (value = email)
+  - identity.telefon      — corrected/new phone number (value = phone)
+  - incident.status       — incident progress (value = reported|in_progress|resolved)
+  - notes.freeform        — anything that doesn't fit the above (value = the raw note)
+
+Convert relative dates ("today", "next Monday") to ISO using ${today} as anchor.
+
+Output ONLY a JSON object, no prose:
+{
+  "predicate": "<one of the list above>",
+  "value": "<the value>",
+  "valid_from": "<YYYY-MM-DD or null>",
+  "human_summary": "<one short German sentence describing the change>"
+}`;
+
+  const result = await compose({
+    prompt: extractPrompt,
+    meta: { entity: resolved.id },
+  });
+
+  let patch: { predicate: string; value: string; valid_from: string | null; human_summary: string } | null = null;
+  try {
+    const jsonMatch = result.text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) patch = JSON.parse(jsonMatch[0]);
+  } catch {
+    // fall through — patch stays null
+  }
+
+  if (!patch || !patch.predicate || patch.value === undefined) {
+    steps.push({
+      type: "analyzing",
+      content: "Konnte kein strukturiertes Faktum extrahieren.",
+      ts: new Date().toISOString(),
+    });
+    return {
+      answer: `Update verstanden, aber nicht strukturierbar.\n\nGemini hat geantwortet:\n${result.text}`,
+      citations: [],
+      steps,
+      suggestions: [],
+      entities_accessed: [resolved.id],
+      facts_used: 0,
+      model: result.model,
+      latency_ms: Math.round(performance.now() - t0),
+    };
+  }
+
+  steps.push({
+    type: "analyzing",
+    content: `Patch: ${patch.predicate} = ${patch.value}${patch.valid_from ? ` (gültig ab ${patch.valid_from})` : ""}`,
+    ts: new Date().toISOString(),
+  });
+
+  // ── 3. Write the fact + a manager-update Source row ────────────────
+  const now = new Date().toISOString();
+  const sourceId = newSourceId(`manager-update-${resolved.id}`);
+  insertSource({
+    id: sourceId,
+    kind: "stammdaten", // manager-typed updates use the highest-trust kind
+    title: `Manager update: ${patch.human_summary ?? input.message.slice(0, 80)}`,
+    ingested_at: now,
+    raw_excerpt: input.message,
+    source_prior: 0.98, // explicit human update outranks email-derived facts
+    entity_id: resolved.id,
+  });
+
+  const factId = newFactId();
+  const fact: Fact = {
+    id: factId,
+    entity: resolved.id,
+    predicate: patch.predicate,
+    value: patch.value,
+    unit: undefined,
+    valid_from: patch.valid_from ?? null,
+    valid_to: null,
+    known_from: now,
+    known_to: null,
+    source: sourceId,
+    span: { start: 0, end: input.message.length, quote: input.message.slice(0, 200) },
+    confidence: 0.99,
+    superseded_by: null,
+    ident: ident(resolved.id, patch.predicate, patch.valid_from ?? null),
+  };
+  insertFact(fact);
+  logEvent("insert", factId, `agent.update · ${patch.predicate}`);
+
+  steps.push({
+    type: "learning",
+    content: `Fakt geschrieben: ${patch.predicate} (Source: ${sourceId})`,
+    ts: new Date().toISOString(),
+  });
 
   recordAction({
     actor: "user",
     action: "agent.update",
-    entity: input.entity_id ?? null,
+    entity: resolved.id,
     input: { message: input.message },
-    output: { extracted: result.text.slice(0, 500) },
+    output: { predicate: patch.predicate, value: patch.value, valid_from: patch.valid_from, fact_id: factId },
     latency_ms: result.latency_ms,
     partner: "google-deepmind",
   });
 
+  const summary = patch.human_summary ?? `${patch.predicate} = ${patch.value}`;
   return {
-    answer: result.text,
-    citations: [],
+    answer: `${summary}\n\nKontext für ${resolved.name} aktualisiert. ^[Manager update]`,
+    citations: [`Manager update: ${patch.human_summary ?? ""}`],
     steps,
     suggestions: [],
-    entities_accessed: input.entity_id ? [input.entity_id] : [],
-    facts_used: 0,
+    entities_accessed: [resolved.id],
+    facts_used: 1,
     model: result.model,
     latency_ms: Math.round(performance.now() - t0),
   };

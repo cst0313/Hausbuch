@@ -4,6 +4,47 @@ import { getAllFactsForEntity } from "./db";
 import { computePosterior, groupByOverlap } from "./reconciler";
 
 /**
+ * Decide whether a group of facts under one predicate is a real conflict or
+ * just corroboration (same value asserted by multiple sources).
+ *
+ * Without this, three sources all reporting "true" rendered as a "conflict"
+ * with P=1.00 — confusing the user, since the system was telling them three
+ * agreeing observations were a disagreement. Real conflict requires distinct
+ * values across the group; otherwise return the most-recent fact as a single
+ * (the renderer's existing countCorroborations() will then surface the
+ * "× N sources" badge for free).
+ */
+function classifyGroup(group: Fact[], predicate: string): PredicateView {
+  if (group.length === 1) return { kind: "single", fact: group[0] };
+  const values = new Set(group.map((f) => normalizeValue(f.value)));
+  if (values.size === 1) {
+    // All sources agree on the same value — corroboration, not conflict.
+    // Pick the most recent fact so the citation in the rendered line points
+    // at the freshest evidence (countCorroborations handles the multi-source
+    // badge separately).
+    const latest = [...group].sort((a, b) =>
+      (b.known_from ?? "").localeCompare(a.known_from ?? ""),
+    )[0];
+    return { kind: "single", fact: latest };
+  }
+  return {
+    kind: "conflict",
+    facts: group,
+    posterior: computePosterior(group, predicate),
+  };
+}
+
+function normalizeValue(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "number") {
+    // 1500 vs 1500.0 vs "1500" should all collapse so a numeric corroboration
+    // doesn't render as a conflict because of formatting drift between sources.
+    return String(Number(v));
+  }
+  return String(v).trim().toLowerCase();
+}
+
+/**
  * Project the append-only fact store into a bitemporal view.
  *
  * For a given entity and (at_valid, at_known):
@@ -72,10 +113,7 @@ export function fullView(
       const groups = groupByOverlap(currentGroup);
       const group = groups[0];
       if (group) {
-        current[predicate] =
-          group.length === 1
-            ? { kind: "single", fact: group[0] }
-            : { kind: "conflict", facts: group, posterior: computePosterior(group, predicate) };
+        current[predicate] = classifyGroup(group, predicate);
       }
     }
 
@@ -88,14 +126,7 @@ export function fullView(
       upcomingGroup.sort((a, b) => (a.valid_from! < b.valid_from! ? -1 : 1));
       const earliest = upcomingGroup[0].valid_from;
       const earliestBucket = upcomingGroup.filter((f) => f.valid_from === earliest);
-      upcoming[predicate] =
-        earliestBucket.length === 1
-          ? { kind: "single", fact: earliestBucket[0] }
-          : {
-              kind: "conflict",
-              facts: earliestBucket,
-              posterior: computePosterior(earliestBucket, predicate),
-            };
+      upcoming[predicate] = classifyGroup(earliestBucket, predicate);
     }
   }
 

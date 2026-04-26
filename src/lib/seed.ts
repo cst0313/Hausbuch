@@ -546,11 +546,20 @@ function extractEmailFacts(entityId: string, source: Source, body: string, categ
   const now = source.ingested_at;
   const text = (body + " " + (source.title ?? "")).toLowerCase();
   const cat = (category ?? "").toLowerCase();
+  const isOutbound = source.direction === "outgoing";
 
   // ── Incident detection ─────────────────────────────────────────────
   // Single source of truth: scoreIncidentTypes() lives in incident-classify.ts
   // and is shared with the rec engine, so root-cause detection at rec time
   // can never silently disagree with the extractor's keyword set.
+  //
+  // Outbound emails are skipped here. They're our acknowledgements / replies
+  // and shouldn't seed new incident.type facts. Without this gate, a synthetic
+  // reply titled "Re: Schimmel im Schlafzimmer" whose body actually confirmed
+  // a Kündigung was being marked as a fresh mold incident — polluting the
+  // mold rec's email_chain with a Kündigung-bodied message. The awaiting-reply
+  // detector still uses the source's `direction` field, so it doesn't depend
+  // on these facts existing.
   const isSchaden = cat.includes("schaden") || cat.includes("mangel");
   const subjectStr = (source.title ?? "");
   const matches = scoreIncidentTypes(body, subjectStr);
@@ -558,11 +567,11 @@ function extractEmailFacts(entityId: string, source: Source, body: string, categ
   const top = matches[0];
   const hasStrongSignal = hasStrongIncidentSignal(matches, isSchaden);
 
-  if (hasStrongSignal && matches.length > 0) {
+  if (!isOutbound && hasStrongSignal && matches.length > 0) {
     const type = subjectMatchedType?.type ?? top.type;
     writeFact(entityId, "incident.type", type, source.id, body.slice(0, 120), now);
     writeFact(entityId, "incident.status", "reported", source.id, "gemeldet", now);
-  } else if (isSchaden) {
+  } else if (!isOutbound && isSchaden) {
     // Category says it's an incident but keywords didn't recognize the type.
     // Defer to LLM (post-seed) so the user gets coverage on paraphrased reports.
     pendingClassifications.push({

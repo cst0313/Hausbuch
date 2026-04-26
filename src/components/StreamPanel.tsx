@@ -213,7 +213,18 @@ export function StreamPanel({
     "Erledigt",
   ];
   const totalSteps = 5;
-  const stepReached = resolved ? 5 : sent ? 4 : draft && !drafting ? 3 : 2;
+  // Mirror the dashboard RecRow step calc — if the rec engine has surfaced a
+  // follow_up action, the original outbound is already on file (awaiting-reply
+  // state) and the case is at step 4, not step 3. Without this the row showed
+  // 4/5 but clicking in showed 3/5 for the same rec.
+  const hasFollowUp = rec.actions.some((a) => a.type === "follow_up");
+  const stepReached = resolved
+    ? 5
+    : sent || hasFollowUp
+      ? 4
+      : draft && !drafting
+        ? 3
+        : 2;
   const currentStep = stepReached;
   const labels = locale === "en" ? STEP_LABELS_EN : STEP_LABELS_DE;
   const stepLabel = labels[stepReached - 1];

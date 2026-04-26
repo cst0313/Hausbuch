@@ -169,8 +169,8 @@ const copy: Record<string, { en: string; de: string }> = {
   "dash.headline.coda":           { en: "What needs you next?", de: "Was braucht Sie als Nächstes?" },
 
   "dash.lede.before_kbd": {
-    en: "Triage from the top. Drafts are ready where the path was obvious. Reputation flags are loaded. Press",
-    de: "Triagieren Sie von oben. Entwürfe sind bereit, wo der Weg klar war. Reputationsflags sind geladen. Drücken Sie",
+    en: "Press",
+    de: "Drücken Sie",
   },
   "dash.lede.after_kbd": {
     en: "to find anything across",

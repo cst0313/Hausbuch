@@ -84,18 +84,46 @@ const TYPE_LABEL: Record<string, string> = {
   contractor: "Contractor profile",
 };
 
+/**
+ * Minimal shape of a recommendation as the profile panel needs it.
+ * Matches what /api/recommendations returns; kept narrow so the panel
+ * doesn't pull in the full recs.ts type graph.
+ */
+type ProfileRec = {
+  id: string;
+  severity: "critical" | "high" | "medium" | "low";
+  entity_id: string;
+  entity_name: string;
+  category: string;
+  title: string;
+  title_en?: string;
+  summary: string;
+  summary_en?: string;
+  email_chain?: Array<{ source_id: string; title: string; date: string }>;
+  facts?: Array<{ predicate: string; value: string; source_title: string; known_from: string }>;
+  actions?: Array<{ type: string; label: string; label_de: string; draft_context?: unknown }>;
+};
+
 export function EntityProfilePanel({
   open,
   entityId,
   onClose,
   onOpenEntity,
+  onOpenCase,
 }: {
   open: boolean;
   entityId: string | null;
   onClose: () => void;
   onOpenEntity?: (id: string) => void;
+  /**
+   * Fired when the user clicks an open case in the profile. The full rec
+   * is passed back so the parent can hand it to its StreamPanel without
+   * re-fetching. The dashboard wires this to openStream(rec).
+   */
+  onOpenCase?: (rec: ProfileRec) => void;
 }) {
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [openCases, setOpenCases] = useState<ProfileRec[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -103,6 +131,7 @@ export function EntityProfilePanel({
     let cancelled = false;
     setLoading(true);
     setProfile(null);
+    setOpenCases([]);
     fetch(`/api/entity-profile/${encodeURIComponent(entityId)}`)
       .then((r) => r.json())
       .then((d) => {
@@ -112,6 +141,28 @@ export function EntityProfilePanel({
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
+    // Pull the open cases for this entity from the live recommendations
+    // engine. Using sessionStorage as a fast-path so re-opening the
+    // profile is instant; refresh from the network in the background.
+    try {
+      const cached = sessionStorage.getItem("hausbuch:recs:v1");
+      if (cached) {
+        const parsed = JSON.parse(cached) as ProfileRec[];
+        if (Array.isArray(parsed)) {
+          setOpenCases(parsed.filter((r) => r.entity_id === entityId));
+        }
+      }
+    } catch {
+      /* sessionStorage disabled — fall through */
+    }
+    fetch("/api/recommendations")
+      .then((r) => r.json())
+      .then((d: { recommendations: ProfileRec[] }) => {
+        if (cancelled) return;
+        const all = d.recommendations ?? [];
+        setOpenCases(all.filter((r) => r.entity_id === entityId));
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -336,6 +387,20 @@ export function EntityProfilePanel({
                 </div>
               </div>
 
+              {/* Open cases — clickable cards above the type-specific
+                  sections so the manager can jump straight from a
+                  profile to the email thread + action ladder for any
+                  open case on this entity. Same data shape /dashboard
+                  uses; the StreamPanel handles thread + follow-ups. */}
+              {openCases.length > 0 && (
+                <OpenCasesList
+                  cases={openCases}
+                  onOpen={(rec) => {
+                    onOpenCase?.(rec);
+                  }}
+                />
+              )}
+
               {/* Type-specific sections */}
               {profile.type === "tenant" && (
                 <TenantSections profile={profile} onOpenEntity={onOpenEntity} />
@@ -446,6 +511,149 @@ export function EntityProfilePanel({
 }
 
 // ── Type-specific sections ───────────────────────────────────────────────────
+
+/**
+ * List of open cases for this entity. Each card shows severity tick,
+ * title, summary, latest email subject + date, and a count of follow-up
+ * messages in the thread. Click → onOpen(rec), which the dashboard
+ * routes to the StreamPanel (email chain + action ladder).
+ */
+function OpenCasesList({
+  cases,
+  onOpen,
+}: {
+  cases: ProfileRec[];
+  onOpen: (rec: ProfileRec) => void;
+}) {
+  const sevColor: Record<ProfileRec["severity"], string> = {
+    critical: "var(--severity-critical)",
+    high: "var(--severity-high)",
+    medium: "var(--severity-medium)",
+    low: "var(--severity-low)",
+  };
+  const sevOrder: Record<ProfileRec["severity"], number> = {
+    critical: 0,
+    high: 1,
+    medium: 2,
+    low: 3,
+  };
+  const sorted = [...cases].sort((a, b) => sevOrder[a.severity] - sevOrder[b.severity]);
+  return (
+    <Section title={`Open cases · ${cases.length}`}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {sorted.map((rec) => {
+          const chain = rec.email_chain ?? [];
+          const latest = chain[0];
+          return (
+            <button
+              key={rec.id}
+              type="button"
+              onClick={() => onOpen(rec)}
+              className="transition-colors"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "4px 1fr auto",
+                gap: 14,
+                padding: "12px 14px",
+                background: "var(--bg-elevated)",
+                border: "1px solid var(--border)",
+                borderRadius: 8,
+                cursor: "pointer",
+                textAlign: "left",
+                fontFamily: "inherit",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "var(--bg-hover)";
+                e.currentTarget.style.borderColor = "var(--brand)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "var(--bg-elevated)";
+                e.currentTarget.style.borderColor = "var(--border)";
+              }}
+              aria-label={`Open case: ${rec.title}`}
+            >
+              <div
+                style={{
+                  width: 4,
+                  borderRadius: 2,
+                  background: sevColor[rec.severity],
+                }}
+              />
+              <div style={{ minWidth: 0 }}>
+                <div
+                  style={{
+                    fontSize: 13.5,
+                    fontWeight: 500,
+                    letterSpacing: "-0.005em",
+                    color: "var(--fg)",
+                    marginBottom: 4,
+                  }}
+                >
+                  {rec.title}
+                </div>
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "var(--fg-muted)",
+                    lineHeight: 1.45,
+                    overflow: "hidden",
+                    display: "-webkit-box",
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: "vertical",
+                  }}
+                >
+                  {rec.summary}
+                </div>
+                {latest && (
+                  <div
+                    className="mono"
+                    style={{
+                      fontSize: 10.5,
+                      color: "var(--fg-dim)",
+                      marginTop: 6,
+                      display: "flex",
+                      gap: 8,
+                      flexWrap: "wrap",
+                      alignItems: "baseline",
+                    }}
+                  >
+                    <span>{latest.date.slice(0, 10)}</span>
+                    <span style={{ color: "var(--fg-muted)" }}>
+                      latest: {latest.title}
+                    </span>
+                    {chain.length > 1 && (
+                      <span
+                        style={{
+                          color: "var(--brand)",
+                          padding: "1px 6px",
+                          borderRadius: 999,
+                          background: "var(--brand-wash)",
+                        }}
+                      >
+                        {chain.length} messages in thread
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+              <span
+                className="mono"
+                style={{
+                  fontSize: 11,
+                  color: "var(--brand)",
+                  alignSelf: "center",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                open →
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </Section>
+  );
+}
 
 function TenantSections({
   profile,

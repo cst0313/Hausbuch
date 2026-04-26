@@ -614,10 +614,12 @@ function extractEmailFacts(entityId: string, source: Source, body: string, categ
   const top = matches[0];
   const hasStrongSignal = hasStrongIncidentSignal(matches, isSchaden);
 
+  let wroteIncident = false;
   if (!isOutbound && hasStrongSignal && matches.length > 0) {
     const type = subjectMatchedType?.type ?? top.type;
     writeFact(entityId, "incident.type", type, source.id, body.slice(0, 120), now);
     writeFact(entityId, "incident.status", "reported", source.id, "gemeldet", now);
+    wroteIncident = true;
   } else if (!isOutbound && isSchaden) {
     // Category says it's an incident but keywords didn't recognize the type.
     // Defer to LLM (post-seed) so the user gets coverage on paraphrased reports.
@@ -635,16 +637,19 @@ function extractEmailFacts(entityId: string, source: Source, body: string, categ
   // thread or a signature should NOT mark the entity as having terminated
   // their lease. Require: explicit category, OR subject keyword, OR an
   // unambiguous first-person phrase in the body.
+  let wroteLegal = false;
   const subjectHasKuendigung = /k(?:ü|ue)ndigung/i.test(subjectStr);
   const bodyHasKuendigungIntent = /\b(?:hiermit\s+)?(?:k(?:ü|ue)ndige|k(?:ü|ue)ndigen?\s+(?:wir|hiermit))\b|fristgerecht.*k(?:ü|ue)ndig|mietvertrag.*k(?:ü|ue)ndig/i.test(body);
   if (cat.includes("kuendigung") || subjectHasKuendigung || bodyHasKuendigungIntent) {
     writeFact(entityId, "legal.kuendigung", "true", source.id, body.slice(0, 120), now);
+    wroteLegal = true;
   }
 
   const subjectHasMietminderung = /mietminderung|minderung\s+der\s+miete/i.test(subjectStr);
   const bodyHasMietminderungIntent = /\bmietminderung\b|\bmiete\s+(?:um|von)\s+\d+\s*%\s+minder|\bich\s+werde\s+die\s+miete.*mindern/i.test(body);
   if (cat.includes("mietminderung") || subjectHasMietminderung || bodyHasMietminderungIntent) {
     writeFact(entityId, "legal.mietminderung", "true", source.id, body.slice(0, 120), now);
+    wroteLegal = true;
     const pctMatch = body.match(/(\d{1,2})\s*%/);
     if (pctMatch) writeFact(entityId, "legal.mietminderung.prozent", Number(pctMatch[1]), source.id, `${pctMatch[1]}%`, now);
   }
@@ -653,6 +658,26 @@ function extractEmailFacts(entityId: string, source: Source, body: string, categ
   const subjectHasSonderumlage = /sonderumlage/i.test(subjectStr);
   if (subjectHasSonderumlage || /einspruch[^.]*sonderumlage|sonderumlage[^.]*einspruch/i.test(body)) {
     writeFact(entityId, "legal.sonderumlage_dispute", "true", source.id, body.slice(0, 120), now);
+  }
+
+  // ── Underlying Mängel from a legal email ───────────────────────────
+  // When a Mietminderung / Kündigung body cites "Wasserschaden, Schimmel"
+  // we want incident facts for the underlying issues — without them the
+  // tenant's profile shows only "legal.mietminderung" with no record of
+  // the leak that caused it. The strict incident-detection gate above
+  // missed this because /\bwasser\b/ doesn't match "Wasserschaden" (no
+  // word boundary after "wasser"); only the more specific
+  // /\bwasserschaden\b/ fires (score 1) — below the strong-signal floor.
+  //
+  // The legal context IS the strong signal here. Relaxed threshold:
+  // any incident keyword match in the body produces an incident fact
+  // citing the same source.
+  if (!isOutbound && wroteLegal && !wroteIncident && matches.length > 0) {
+    // Cap at 3 to avoid noise from a venting email that lists 5 issues.
+    for (const match of matches.slice(0, 3)) {
+      writeFact(entityId, "incident.type", match.type, source.id, body.slice(0, 120), now);
+    }
+    writeFact(entityId, "incident.status", "reported", source.id, "gemeldet (cited in legal email)", now);
   }
 
   // ── Financial ───────────────────────────────────────────────────────

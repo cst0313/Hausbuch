@@ -32,6 +32,10 @@ type Recommendation = {
   email_chain?: Array<{ source_id: string; title: string; date: string }>;
   actions: Array<{ type: string; label: string; label_de: string }>;
   entity_reputation?: { score: number; band: Band; incidents_open: number; mahnung_count: number; related_units?: string[] };
+  /** Operational issues that caused this rec, set on legal recs whose body
+   *  cited Mängel. Used to label dispatched contractors with the actual
+   *  root-cause type instead of the legal category. */
+  root_causes?: Array<{ type: string; score: number; open_incident_count?: number }>;
   created_at: string;
   /** Override the auto-computed step (1..5) — used by demo items so the
    *  lifecycle bar shows progression instead of every row landing at 3. */
@@ -532,6 +536,15 @@ export default function DashboardPage() {
           // draft can say "we have already contacted <contractor>" rather
           // than the generic "we are reviewing the matter". /api/dispatch
           // writes dispatch.contractor + incident.status=dispatched.
+          // Compute the actual incident type for the dispatch source label.
+          // For incident.* recs the category strips to the type directly.
+          // For legal.* recs (Mietminderung / Kündigung) the underlying
+          // type comes from root_causes — falling back to pickerTrade
+          // which the UI already routed to a specific contractor branche.
+          const dispatchType =
+            streamRec?.category?.startsWith("incident.")
+              ? streamRec.category.replace(/^incident\./, "")
+              : streamRec?.root_causes?.[0]?.type ?? pickerTrade ?? undefined;
           fetch("/api/dispatch", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -539,7 +552,7 @@ export default function DashboardPage() {
               entity_id: streamRec?.entity_id ?? "weg:immanuelkirchstr-26",
               contractor_id: c.id,
               contractor_name: c.name,
-              incident_type: streamRec?.category?.replace(/^incident\./, ""),
+              incident_type: dispatchType,
               note: `Manager dispatched ${c.name} for ${streamRec?.title ?? "open issue"} (reputation ${c.reputation.score.toFixed(2)} ${c.reputation.band}).`,
             }),
           })
@@ -586,6 +599,20 @@ export default function DashboardPage() {
             return;
           }
           setEntityProfileId(id);
+        }}
+        onOpenCase={(rec) => {
+          // The user clicked an open-case card on a tenant profile.
+          // Close the profile and route to the existing StreamPanel,
+          // which shows email_chain + action ladder + dispatch flow.
+          setEntityProfileOpen(false);
+          setTimeout(() => {
+            setEntityProfileId(null);
+            // Resolve the live rec from local state if we have it (so
+            // the StreamPanel sees the same object reference the
+            // dashboard does); fallback to the rec from the profile.
+            const live = recs.find((r) => r.id === rec.id);
+            openStream((live ?? rec) as Recommendation);
+          }, 240);
         }}
       />
 

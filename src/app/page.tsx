@@ -407,7 +407,7 @@ function DemoNarrative() {
     },
     {
       n: "05",
-      eyebrow: "/ lightning fast",
+      eyebrow: "/ performance-oriented context",
       title: (
         <>
           16,874 facts.{" "}
@@ -419,9 +419,13 @@ function DemoNarrative() {
       body: (
         <>
           The dashboard, the agent, and every Context.md read off the same
-          warm cache. Every write invalidates only what it changed.
+          warm cache. Every write invalidates only what it changed. The
+          format itself is engineered for the LLM that reads it — anchored
+          fact rows beat plain markdown by an order of magnitude on every
+          axis we measured.
         </>
       ),
+      widget: <FormatComparison />,
       metric: (
         <div
           className="font-mono"
@@ -494,12 +498,7 @@ function DemoNarrative() {
           padded fact table, not prose, so every line keeps its source.
         </>
       ),
-      widget: (
-        <>
-          <AgentDemo />
-          <FormatComparison />
-        </>
-      ),
+      widget: <AgentDemo />,
     },
   ];
 

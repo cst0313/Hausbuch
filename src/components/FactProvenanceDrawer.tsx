@@ -1,8 +1,9 @@
 // path: src/components/FactProvenanceDrawer.tsx
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { Fact, Source } from "@/lib/types";
+import { PdfHighlightView } from "./PdfHighlightView";
 
 type Props = {
   fact: Fact | null;
@@ -144,13 +145,26 @@ export function FactProvenanceDrawer({ fact, source, onClose }: Props) {
                     {source.kind} · ingested {source.ingested_at}
                   </p>
                   {/*
-                    Source preview with the extraction span highlighted.
-                    The italic-serif blockquote read as decorative on a dense
-                    document; replaced with a sans-serif preview that shows
-                    the raw text around the extracted span and highlights
-                    the exact bytes that produced this fact.
+                    Source preview. Three render paths:
+                      • PDF (kind = letter/invoice/pdf) → fetch the actual
+                        bytes and render the page with the highlight rect
+                        drawn on top via PdfHighlightView.
+                      • Email (kind = email) → render the extraction-span
+                        preview AND the rest of the thread so the user can
+                        navigate the whole conversation.
+                      • Anything else (note, bank, stammdaten) → just the
+                        text-based ExtractionPreview.
                   */}
-                  <ExtractionPreview source={source} fact={fact} />
+                  {(["letter", "invoice", "pdf"].includes(source.kind)) ? (
+                    <PdfSourcePreview source={source} fact={fact} />
+                  ) : source.kind === "email" ? (
+                    <>
+                      <ExtractionPreview source={source} fact={fact} />
+                      <ThreadView sourceId={source.id} />
+                    </>
+                  ) : (
+                    <ExtractionPreview source={source} fact={fact} />
+                  )}
 
                   {fact.span && (
                     <div
@@ -288,6 +302,192 @@ function ExtractionPreview({ source, fact }: { source: Source; fact: Fact }) {
         {highlight}
       </mark>
       <span>{after}</span>
+    </div>
+  );
+}
+
+/**
+ * Render the original PDF page(s) with the extraction span highlighted on
+ * top. Fetches /api/source/<id>/pdf for the bytes; falls back to the text
+ * ExtractionPreview if the PDF can't be located on disk.
+ */
+function PdfSourcePreview({ source, fact }: { source: Source; fact: Fact }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/source/${encodeURIComponent(source.id)}/pdf`)
+      .then(async (r) => {
+        if (!r.ok) {
+          const j = await r.json().catch(() => ({}));
+          throw new Error(j?.error ?? `HTTP ${r.status}`);
+        }
+        return r.blob();
+      })
+      .then((blob) => {
+        if (cancelled) return;
+        setFile(new File([blob], `${source.title}.pdf`, { type: "application/pdf" }));
+      })
+      .catch((e) => {
+        if (!cancelled) setError(String(e?.message ?? e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [source.id, source.title]);
+
+  if (error) {
+    return (
+      <>
+        <div
+          className="text-[11px] font-mono mb-2"
+          style={{ color: "var(--fg-dim)" }}
+        >
+          PDF unavailable ({error}) — showing extracted text instead
+        </div>
+        <ExtractionPreview source={source} fact={fact} />
+      </>
+    );
+  }
+  if (!file) {
+    return (
+      <div
+        className="rounded-md p-3 text-[12px]"
+        style={{
+          background: "var(--bg)",
+          border: "1px solid var(--border-muted)",
+          color: "var(--fg-dim)",
+        }}
+      >
+        loading PDF…
+      </div>
+    );
+  }
+  const quote = (fact.span?.quote ?? "").trim();
+  return (
+    <div
+      style={{
+        border: "1px solid var(--border-muted)",
+        borderRadius: 8,
+        overflow: "hidden",
+        background: "var(--bg)",
+      }}
+    >
+      <div
+        className="text-[10px] font-mono uppercase tracking-wider px-3 py-2"
+        style={{
+          color: "var(--fg-dim)",
+          background: "var(--bg-elevated)",
+          borderBottom: "1px solid var(--border-muted)",
+        }}
+      >
+        extraction span · highlighted on the original page
+      </div>
+      <div style={{ maxHeight: 480, overflowY: "auto" }}>
+        <PdfHighlightView
+          file={file}
+          spans={[{ predicate: fact.predicate, quote, value: String(fact.value ?? "") }]}
+          hovered={quote}
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Render the rest of the email thread the source belongs to. Each row
+ * shows the timestamp, direction (incoming / outgoing), subject, and
+ * a short excerpt; clicking would open that source's drawer in a future
+ * pass — for now it's read-only context for the manager.
+ */
+function ThreadView({ sourceId }: { sourceId: string }) {
+  type ThreadEntry = {
+    id: string;
+    title: string;
+    ingested_at: string;
+    direction: string | null;
+    from_addr: string | null;
+    to_addr: string | null;
+    excerpt: string;
+  };
+  const [thread, setThread] = useState<{ thread_id: string | null; sources: ThreadEntry[] } | null>(
+    null,
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/source/${encodeURIComponent(sourceId)}/thread`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (!cancelled) setThread(d);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [sourceId]);
+
+  if (!thread || thread.sources.length <= 1) return null;
+  return (
+    <div className="mt-4">
+      <div
+        className="text-[10px] font-mono uppercase tracking-wider mb-2"
+        style={{ color: "var(--fg-dim)" }}
+      >
+        thread · {thread.sources.length} message{thread.sources.length === 1 ? "" : "s"}
+      </div>
+      <ol
+        className="space-y-2"
+        style={{ listStyle: "none", margin: 0, padding: 0 }}
+      >
+        {thread.sources.map((m) => {
+          const isCurrent = m.id === sourceId;
+          const isOutgoing = m.direction === "outgoing";
+          return (
+            <li
+              key={m.id}
+              className="rounded-md p-2.5 text-[12px]"
+              style={{
+                background: isCurrent ? "color-mix(in srgb, var(--brand) 12%, transparent)" : "var(--bg)",
+                border: `1px solid ${isCurrent ? "var(--brand)" : "var(--border-muted)"}`,
+                color: "var(--fg-muted)",
+              }}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <span
+                  className="font-mono text-[10px]"
+                  style={{
+                    color: isOutgoing ? "var(--brand)" : "var(--fg-muted)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                  }}
+                >
+                  {isOutgoing ? "→ outgoing" : "← incoming"}
+                </span>
+                <span className="font-mono text-[10px]" style={{ color: "var(--fg-dim)" }}>
+                  {m.ingested_at.slice(0, 10)}
+                </span>
+                {isCurrent && (
+                  <span
+                    className="font-mono text-[9px] px-1.5 py-0.5 rounded"
+                    style={{ background: "var(--brand)", color: "white", letterSpacing: "0.04em" }}
+                  >
+                    THIS
+                  </span>
+                )}
+              </div>
+              <div style={{ color: "var(--fg)", fontWeight: 500, marginBottom: 4 }}>
+                {m.title}
+              </div>
+              <div style={{ fontSize: 11.5, lineHeight: 1.45 }}>
+                {m.excerpt.replace(/\s+/g, " ")}
+                {m.excerpt.length >= 240 ? "…" : ""}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
     </div>
   );
 }

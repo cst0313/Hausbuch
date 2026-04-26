@@ -33,7 +33,17 @@ export default function ContextPage({
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Fact | null>(null);
   const [showRaw, setShowRaw] = useState(false);
+  // Bitemporal valid-time we're rendering AT. null = "now". The TimelineScrubber
+  // controls this; the renderer projects facts as they were on that date.
+  const [atValid, setAtValid] = useState<string | null>(null);
+  // Keep the FULL fact list separate from the projected `data` so the timeline
+  // tick density doesn't change as the user scrubs. The slider wants to see
+  // every fact ever written (its job is to navigate them); the page body wants
+  // only the facts true at the chosen date.
+  const [allFacts, setAllFacts] = useState<Fact[] | null>(null);
 
+  // Initial load — pulls every live fact for this entity so the slider has the
+  // full timeline to render.
   useEffect(() => {
     let cancelled = false;
     fetch(`/api/context/${encodeURIComponent(entity)}?format=json&detail=3`)
@@ -41,6 +51,29 @@ export default function ContextPage({
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
       })
+      .then((d: ContextResponse) => {
+        if (cancelled) return;
+        setData(d);
+        setAllFacts(d.facts);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [entity]);
+
+  // Re-fetch the projected view whenever the user moves the slider. We don't
+  // touch allFacts here so the timeline ticks stay stable.
+  useEffect(() => {
+    if (atValid === null) return;
+    let cancelled = false;
+    const url =
+      `/api/context/${encodeURIComponent(entity)}` +
+      `?format=json&detail=3&at_valid=${encodeURIComponent(atValid)}`;
+    fetch(url)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((d: ContextResponse) => {
         if (!cancelled) setData(d);
       })
@@ -50,7 +83,7 @@ export default function ContextPage({
     return () => {
       cancelled = true;
     };
-  }, [entity]);
+  }, [entity, atValid]);
 
   const buildingName = useMemo(() => {
     if (!data) return entity;
@@ -71,6 +104,29 @@ export default function ContextPage({
       <main className="max-w-5xl mx-auto px-6 pt-12 pb-24 fade-up">
         {/* Header */}
         <header className="mb-8">
+          {/*
+            Back affordance — context pages are reached from /graph (clicking
+            a node), /dashboard (rec rows), /audit (entity link), or directly.
+            history.back() is the cheapest way to land the user back where
+            they came from regardless of origin; if there is no referrer
+            (deep-link landing) we fall back to /dashboard.
+          */}
+          <button
+            onClick={() => {
+              if (window.history.length > 1) window.history.back();
+              else window.location.href = "/dashboard";
+            }}
+            className="inline-flex items-center gap-1.5 text-[12px] font-mono mb-3 px-2 py-1 rounded transition-colors"
+            style={{
+              color: "var(--fg-muted)",
+              border: "1px solid var(--border-muted)",
+              background: "transparent",
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            ← back
+          </button>
           <p
             className="text-[11px] font-mono uppercase tracking-wider mb-3"
             style={{ color: "var(--fg-dim)" }}
@@ -117,10 +173,17 @@ export default function ContextPage({
           )}
         </header>
 
-        {/* Timeline scrubber */}
+        {/* Time-travel slider — drives the bitemporal projection rendered below */}
         {data && (
           <div className="mb-10">
-            <TimelineScrubber facts={data.facts} at={new Date().toISOString()} />
+            <TimelineScrubber
+              // Use the FULL fact list so tick density is stable while scrubbing;
+              // the page below is what re-projects to the chosen date.
+              facts={allFacts ?? data.facts}
+              at={atValid ?? new Date().toISOString()}
+              onChange={(iso) => setAtValid(iso)}
+              onJumpToTick={(iso) => setAtValid(iso)}
+            />
           </div>
         )}
 

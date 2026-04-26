@@ -1,30 +1,49 @@
 // path: src/components/TimelineScrubber.tsx
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Fact } from "@/lib/types";
 
 type Props = {
   facts: Fact[];
-  at: string; // ISO
+  /** Current valid-time (ISO) the page is rendering AT. */
+  at: string;
+  /** Fired when the user drags / steps the slider. ISO string. */
   onChange?: (at: string) => void;
+  /** Optional preset jumps. Fired when the user clicks a tick. */
+  onJumpToTick?: (at: string) => void;
 };
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 /**
- * Phase 1.5 skeleton. Renders the timeline dots + a handle at `at`.
- * onChange is a no-op in Phase 1.5 — the drag interaction wires in Phase 3
- * along with FR-12/13/14 (time scrubber + diff overlay + playback).
+ * Bitemporal time-travel slider.
+ *
+ * Slides through valid-time. Each tick is a month bucket of facts the system
+ * has on file; the size of the dot scales with how many facts landed in that
+ * month so a judge can see "lots happened in March 2025" at a glance.
+ *
+ * The interaction:
+ *   • Drag the handle (or click a tick) → onChange fires with an ISO date.
+ *   • The parent re-fetches /api/context/<id>?at_valid=<iso> and re-renders.
+ *   • Keyboard: ←/→ steps by one day, Home/End jumps to bounds, PgUp/PgDn
+ *     by ±30 days. (Native <input type=range> handles this for free.)
+ *
+ * Throttled at 120 ms so a continuous drag doesn't fire 60 fetches/second.
  */
-export function TimelineScrubber({ facts, at, onChange }: Props) {
+export function TimelineScrubber({ facts, at, onChange, onJumpToTick }: Props) {
   const { min, max, ticks } = useMemo(() => {
     if (facts.length === 0) {
       const now = Date.now();
-      return { min: now - 1000 * 60 * 60 * 24 * 30, max: now, ticks: [] };
+      return {
+        min: now - DAY_MS * 365,
+        max: now,
+        ticks: [] as Array<{ t: number; count: number; key: string }>,
+      };
     }
     const times = facts.map((f) => Date.parse(f.known_from)).filter(Number.isFinite);
     const mn = Math.min(...times);
     const mx = Math.max(Date.now(), ...times);
-    // Bin to month buckets for tick display
     const bins = new Map<string, number>();
     for (const t of times) {
       const d = new Date(t);
@@ -40,83 +59,164 @@ export function TimelineScrubber({ facts, at, onChange }: Props) {
   }, [facts]);
 
   const atMs = Date.parse(at);
-  const pct =
-    Number.isFinite(atMs) && max > min
-      ? Math.max(0, Math.min(100, ((atMs - min) / (max - min)) * 100))
-      : 100;
+  const safeAtMs = Number.isFinite(atMs) ? atMs : max;
+  const pct = max > min ? Math.max(0, Math.min(100, ((safeAtMs - min) / (max - min)) * 100)) : 100;
+
+  // Local mirror for smooth dragging — we commit (fire onChange) on a small
+  // throttle so the parent doesn't refetch on every pixel.
+  const [draftMs, setDraftMs] = useState<number>(safeAtMs);
+  useEffect(() => {
+    setDraftMs(safeAtMs);
+  }, [safeAtMs]);
+
+  const lastFireRef = useRef<number>(0);
+  const pendingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fireChange = (ms: number) => {
+    if (!onChange) return;
+    const iso = new Date(ms).toISOString();
+    const now = Date.now();
+    const elapsed = now - lastFireRef.current;
+    if (elapsed > 120) {
+      lastFireRef.current = now;
+      onChange(iso);
+      if (pendingTimeoutRef.current) {
+        clearTimeout(pendingTimeoutRef.current);
+        pendingTimeoutRef.current = null;
+      }
+      return;
+    }
+    if (pendingTimeoutRef.current) clearTimeout(pendingTimeoutRef.current);
+    pendingTimeoutRef.current = setTimeout(() => {
+      lastFireRef.current = Date.now();
+      onChange(iso);
+    }, 120 - elapsed);
+  };
+
+  const draftPct = max > min ? ((draftMs - min) / (max - min)) * 100 : 100;
+  const draftDate = new Date(draftMs);
+  const isAtNow = Math.abs(draftMs - Date.now()) < DAY_MS;
 
   return (
     <div
       className="rounded-lg border px-4 py-3"
       style={{ borderColor: "var(--border)", background: "var(--bg-elevated)" }}
     >
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center justify-between mb-2 gap-3 flex-wrap">
         <div className="flex items-center gap-2">
           <span
             className="text-[11px] font-mono uppercase tracking-wider"
             style={{ color: "var(--fg-dim)" }}
           >
-            Timeline
+            Time-travel
           </span>
           <span
-            className="text-[10px] font-mono px-1.5 py-0.5 rounded"
+            className="font-mono text-[12px] px-2 py-0.5 rounded"
             style={{
               background: "var(--brand-wash)",
-              color: "var(--brand-tint)",
+              color: "var(--brand)",
+              fontFeatureSettings: '"tnum"',
             }}
-            title="Interactive replay lands in Phase 3"
+            title="Drag the slider · ← → step by day · Home/End jump to bounds"
           >
-            preview
+            {formatLong(draftDate)}
           </span>
+          {!isAtNow && (
+            <button
+              onClick={() => {
+                const now = Date.now();
+                setDraftMs(now);
+                if (onChange) onChange(new Date(now).toISOString());
+              }}
+              className="font-mono text-[10px] px-2 py-0.5 rounded transition-colors hover:opacity-80"
+              style={{
+                color: "var(--fg-muted)",
+                background: "var(--bg-hover)",
+                border: "1px solid var(--border-muted)",
+                cursor: "pointer",
+              }}
+              title="Jump back to today"
+            >
+              now ↺
+            </button>
+          )}
         </div>
         <span
-          className="font-mono text-[11px]"
-          style={{ color: "var(--fg-muted)" }}
+          className="font-mono text-[10px]"
+          style={{ color: "var(--fg-dim)" }}
         >
-          now
+          {ticks.reduce((s, t) => s + t.count, 0)} facts on the timeline
         </span>
       </div>
 
-      <div
-        className="relative h-8"
-        role="slider"
-        aria-label="Context timeline (read-only preview)"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Math.round(pct)}
-        aria-disabled="true"
-      >
+      <div className="relative h-8">
         {/* Rail */}
         <div
-          className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-px"
+          className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-px pointer-events-none"
           style={{ background: "var(--border-muted)" }}
         />
 
-        {/* Ticks */}
+        {/* Filled portion left of the handle, brand-tinted */}
+        <div
+          className="absolute left-0 top-1/2 -translate-y-1/2 h-px pointer-events-none"
+          style={{
+            width: `${draftPct}%`,
+            background: "var(--brand)",
+            opacity: 0.55,
+          }}
+        />
+
+        {/* Ticks — clickable so judges can jump to "March 2025" with one tap */}
         {ticks.map(({ t, count, key }) => {
           const p = ((t - min) / (max - min)) * 100;
-          const size = Math.min(10, 3 + Math.log2(count + 1) * 2);
+          const size = Math.min(12, 3 + Math.log2(count + 1) * 2);
           return (
-            <span
+            <button
               key={key}
-              className="absolute top-1/2 -translate-y-1/2 rounded-full"
+              type="button"
+              onClick={() => {
+                setDraftMs(t);
+                if (onJumpToTick) onJumpToTick(new Date(t).toISOString());
+                else if (onChange) onChange(new Date(t).toISOString());
+              }}
+              title={`${key} · ${count} fact${count === 1 ? "" : "s"}`}
+              className="absolute top-1/2 rounded-full transition-transform hover:scale-150"
               style={{
                 left: `${Math.max(0, Math.min(100, p))}%`,
                 width: size,
                 height: size,
-                background: "var(--fg-dim)",
+                background: t <= draftMs ? "var(--brand)" : "var(--fg-dim)",
+                opacity: t <= draftMs ? 0.85 : 0.5,
                 transform: `translate(-50%, -50%)`,
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
               }}
-              title={`${key} · ${count} fact${count === 1 ? "" : "s"}`}
             />
           );
         })}
 
-        {/* Handle */}
+        {/* Native range input — gives us drag, keyboard, and accessibility for free */}
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={DAY_MS}
+          value={draftMs}
+          onChange={(e) => {
+            const ms = Number(e.target.value);
+            setDraftMs(ms);
+            fireChange(ms);
+          }}
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+          aria-label="Time-travel slider"
+          style={{ WebkitAppearance: "none" } as React.CSSProperties}
+        />
+
+        {/* Visual handle */}
         <span
-          className="absolute top-1/2 -translate-y-1/2"
+          className="absolute top-1/2 pointer-events-none"
           style={{
-            left: `${pct}%`,
+            left: `${draftPct}%`,
             transform: `translate(-50%, -50%)`,
           }}
         >
@@ -132,8 +232,12 @@ export function TimelineScrubber({ facts, at, onChange }: Props) {
         </span>
       </div>
 
-      <div className="mt-2 flex items-center justify-between text-[10px] font-mono" style={{ color: "var(--fg-dim)" }}>
+      <div
+        className="mt-2 flex items-center justify-between text-[10px] font-mono"
+        style={{ color: "var(--fg-dim)" }}
+      >
         <span>{formatDate(min)}</span>
+        <span>drag · click ticks · ←/→ for day · Home/End for bounds</span>
         <span>{formatDate(max)}</span>
       </div>
     </div>
@@ -144,4 +248,12 @@ function formatDate(ms: number): string {
   if (!Number.isFinite(ms)) return "—";
   const d = new Date(ms);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function formatLong(d: Date): string {
+  return d.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }

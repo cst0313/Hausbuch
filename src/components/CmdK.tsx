@@ -580,6 +580,76 @@ export function CmdK({
                 </div>
               </>
             )}
+            {/*
+              Curated guiding questions. Every entry is a query the agent
+              answers reliably and quickly on the seeded corpus — single-
+              entity lookups, status checks, and small aggregations that
+              match facts already in the store. Avoids open-ended
+              cross-entity aggregations the agent can't yet answer well.
+            */}
+            <div
+              className="mono"
+              style={{
+                fontSize: 10,
+                color: "var(--fg-dim)",
+                textTransform: "uppercase",
+                letterSpacing: 0.04,
+                marginBottom: 10,
+              }}
+            >
+              Try asking
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 6,
+                marginBottom: 14,
+              }}
+            >
+              {[
+                "How much rent does Edeltraud Renner pay?",
+                "Who lives in unit 32?",
+                "What are Magrit Mitschke's open issues?",
+                "Has the water damage in unit 29 been resolved?",
+                "When does Ferenc Stahr's lease end?",
+                "Who is the owner of unit 23?",
+                "What's the most recent dunning notice?",
+                "Show all critical cases right now.",
+              ].map((q) => (
+                <button
+                  key={q}
+                  onClick={() => {
+                    setQuery(q);
+                    setTimeout(() => askAgent(), 30);
+                  }}
+                  style={{
+                    padding: "8px 10px",
+                    border: "1px solid var(--border-muted)",
+                    borderRadius: 6,
+                    background: "var(--bg)",
+                    color: "var(--fg-muted)",
+                    fontSize: 12,
+                    textAlign: "left",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    lineHeight: 1.4,
+                    transition: "background 120ms, border-color 120ms",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "var(--bg-hover)";
+                    e.currentTarget.style.borderColor = "var(--brand)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "var(--bg)";
+                    e.currentTarget.style.borderColor = "var(--border-muted)";
+                  }}
+                  title="Ask the agent"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
             <div
               className="mono"
               style={{
@@ -601,7 +671,7 @@ export function CmdK({
                 the agent · <span className="kbd">esc</span> close
               </div>
               <div style={{ marginTop: 6 }}>
-                Type a tenant name, unit number (WE 32), email subject, or any question.
+                Type a tenant name, unit number, email subject, or any question.
               </div>
             </div>
           </div>

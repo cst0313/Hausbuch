@@ -70,6 +70,29 @@ function pickLineItemsForSubstring(
   return picked;
 }
 
+/**
+ * Like pickLineItemsForSubstring but takes char-offsets directly. Used by
+ * the multi-line matcher to narrow a line's items to just the ones that
+ * cover the quote-portion of THAT line — without this, a 5-line agenda
+ * quote painted 5 full-width rectangles even though only the first/last
+ * lines were partially inside the match.
+ */
+function pickLineItemsForRange(
+  items: LineItem[],
+  charStart: number,
+  charEnd: number,
+): LineItem[] {
+  let pos = 0;
+  const picked: LineItem[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const start = pos;
+    const end = pos + items[i].str.length;
+    if (start < charEnd && end > charStart) picked.push(items[i]);
+    pos = end + 1; // +1 for the joining space
+  }
+  return picked;
+}
+
 function makeRect(
   its: LineItem[],
   quote: string,
@@ -254,17 +277,37 @@ export function PdfHighlightView({
                   break;
                 }
               }
-              // 2. Multi-line match — try joining up to 4 consecutive lines.
-              for (let j = i + 1; j < Math.min(lines.length, i + 4); j++) {
+              // 2. Multi-line match — try joining up to 8 consecutive lines.
+              //    Bumped from 4 because ETV agendas legitimately span 5–7
+              //    lines (TOP 1 → TOP 5) and were previously falling through.
+              for (let j = i + 1; j < Math.min(lines.length, i + 8); j++) {
                 const joined = lines.slice(i, j + 1).map((l) => l.text).join(" ");
-                if (joined.includes(normQ)) {
-                  // Highlight every line in the run; cheap and unambiguous.
-                  for (let k = i; k <= j; k++) {
-                    rects.push(makeRect(lines[k].items, q));
-                  }
-                  matched = true;
-                  break;
+                const qs = joined.indexOf(normQ);
+                if (qs < 0) continue;
+                const qe = qs + normQ.length;
+                // Map each char-offset into joined back to (lineIdx, lineOffset).
+                // joined was built as lines[i].text + " " + lines[i+1].text + ...
+                // so consecutive line-starts are (length so far) + (1 space per line).
+                let cursor = 0;
+                for (let k = i; k <= j; k++) {
+                  const lineStart = cursor;
+                  const lineEnd = lineStart + lines[k].text.length;
+                  cursor = lineEnd + 1; // +1 for the joining space
+
+                  // Compute the slice of THIS line that's inside [qs, qe).
+                  const sliceStart = Math.max(qs, lineStart) - lineStart;
+                  const sliceEnd = Math.min(qe, lineEnd) - lineStart;
+                  if (sliceEnd <= 0 || sliceStart >= lines[k].text.length) continue;
+
+                  const its = pickLineItemsForRange(
+                    lines[k].items,
+                    sliceStart,
+                    sliceEnd,
+                  );
+                  if (its.length > 0) rects.push(makeRect(its, q));
                 }
+                matched = true;
+                break;
               }
             }
             if (matched) seenQuotes.add(q);

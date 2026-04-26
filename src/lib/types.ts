@@ -41,6 +41,8 @@ export type SourceKind =
   | "image-ocr"
   /** Live enrichment fetched from Tavily (FR-25). */
   | "tavily"
+  /** Live enrichment fetched from Cala (entity verification). */
+  | "cala"
   /** Bank transaction (Kontoauszug). */
   | "bank"
   /** Contractor invoice (Rechnung). */

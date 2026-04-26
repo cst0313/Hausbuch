@@ -16,6 +16,7 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
   }
+  const origin = req.nextUrl.origin;
   const result = await ingest({
     entity: body.entity,
     source: {
@@ -23,7 +24,9 @@ export async function POST(req: NextRequest) {
       title: body.source.title,
       raw_excerpt: body.source.raw_excerpt,
       source_prior: body.source.source_prior,
+      from_addr: body.source.from_addr,
     },
+    origin,
   });
   return NextResponse.json(result);
 }

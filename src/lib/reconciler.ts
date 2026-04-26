@@ -2,12 +2,26 @@
 import type { Fact, Posterior } from "./types";
 import { getSource } from "./db";
 
+/** 90-day half-life for the recency multiplier — matches reputation.ts */
+const RECENCY_HALF_LIFE_DAYS = 90;
+/** Bound the recency adjustment so a fresh source can't dominate alone */
+const RECENCY_FLOOR = 0.7;
+const RECENCY_CEIL = 1.0;
+
 /**
  * Dawid-Skene-flavored conflict reconciliation.
  *
  * Faithful-ish to the 1979 EM approach, but with two practical simplifications:
  *  1. A single EM step (we don't iterate to convergence — usually stable in one pass).
  *  2. Uniform prior over candidate values P(v) = 1/|V|.
+ *
+ * Improvement (2026-04): when two sources have equal priors and contradict,
+ * the older one used to win on extractor-confidence noise alone. We now apply
+ * a bounded recency multiplier (90-day half-life, floor 0.7, ceil 1.0) to each
+ * fact's effective contribution. The pure prior-weighted Dawid-Skene case is
+ * unchanged when sources are roughly contemporaneous; the asymmetry only kicks
+ * in when one source is materially older. Measurable on the conflict-category
+ * questions in the live benchmark.
  *
  * The intuition (Li 2016 survey):
  *   P(value = v | sources that assert v) ∝ P(v) · Π_{s∈S_v} source_prior[s]
@@ -51,9 +65,12 @@ export function computePosterior(
     for (const sid of allSourceIds) {
       const p = priors.get(sid)!;
       if (assertingSources.has(sid)) {
-        // Weight by extractor confidence for the specific fact
+        // Weight by extractor confidence for the specific fact, plus a
+        // bounded recency multiplier so older claims don't dominate
+        // contemporary ones on prior alone.
         const fact = byValue.get(v)!.find((f) => f.source === sid)!;
-        logL += Math.log(p * fact.confidence);
+        const recency = recencyWeight(fact);
+        logL += Math.log(p * fact.confidence * recency);
       } else {
         // This source did NOT assert v — small evidence against
         logL += Math.log((1 - p) + 1e-6);
@@ -101,6 +118,19 @@ export function groupByOverlap(facts: Fact[]): Fact[][] {
     }
   }
   return groups;
+}
+
+/**
+ * Bounded multiplier in [RECENCY_FLOOR, RECENCY_CEIL]. A fact known today
+ * gets 1.0; a 90-day-old fact gets ~0.85; very old facts asymptote to the
+ * floor. Keeps the reconciler's preference for newer claims explicit rather
+ * than baked into priors.
+ */
+function recencyWeight(fact: Fact): number {
+  const knownAt = fact.known_from ? new Date(fact.known_from).getTime() : Date.now();
+  const ageDays = Math.max(0, (Date.now() - knownAt) / 86_400_000);
+  const decayed = Math.exp(-(Math.LN2 * ageDays) / RECENCY_HALF_LIFE_DAYS);
+  return RECENCY_FLOOR + (RECENCY_CEIL - RECENCY_FLOOR) * decayed;
 }
 
 function validOverlap(a: Fact, b: Fact): boolean {

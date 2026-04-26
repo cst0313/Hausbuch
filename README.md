@@ -29,10 +29,26 @@ See [`PAPER.md`](PAPER.md) for the long-form argument.
 
 ```bash
 npm install
-npm run dev    # http://localhost:3000
+cp .env.example .env.local                      # then fill in GEMINI_API_KEY
+unzip hackathon-*.zip -d tmp/                   # produces tmp/hackathon/{stammdaten,emails,briefe,rechnungen,bank,incremental}
+node scripts/extract-pdf-texts.mjs              # one-time: pre-extracts text from 339 PDFs
+npm run dev                                     # http://localhost:3000
 ```
 
-Seeds automatically on first request.
+The fact store seeds automatically on first request from `tmp/hackathon/`. Resetting:
+
+```bash
+curl -X POST http://localhost:3000/api/reset    # truncates tables and re-seeds in place
+```
+
+## Architecture diagrams
+
+Three drawio files in `docs/diagrams/` cover the system at a glance — open them at
+[app.diagrams.net](https://app.diagrams.net) or with the VS Code Drawio Integration extension:
+
+- `01-architecture.drawio` — data sources → ingestion → bitemporal store → reconciliation → UI
+- `02-email-trigger.drawio` — what happens when a tenant email arrives, end-to-end
+- `03-ui-workflow.drawio` — a property manager's morning, lane-by-lane (triage / act / investigate / audit)
 
 ## Partner technologies
 

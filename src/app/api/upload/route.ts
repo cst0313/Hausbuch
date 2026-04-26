@@ -3,8 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { ingest } from "@/lib/ingest";
 import type { SourceKind } from "@/lib/types";
-import { ENTITY } from "@/lib/seed";
 import { extractFromImage, GeminiError } from "@/lib/llm/gemini";
+import { buildRouter, routeForDoc } from "@/lib/route-doc";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,7 +28,14 @@ const SCANNED_PDF_THRESHOLD = 40;
 
 export async function POST(req: NextRequest) {
   db();
-  const entity = (req.nextUrl.searchParams.get("entity") ?? ENTITY) as string;
+  // entity from query string is an explicit override; otherwise we route per-file
+  // based on the document's recipient name / vendor identity.
+  const entityOverride = req.nextUrl.searchParams.get("entity");
+  // preview=1 → extract + route + return facts WITHOUT writing to the DB.
+  // The dashboard's review modal uses this so the user can edit/skip facts
+  // before the corresponding /api/upload/commit call persists them.
+  const previewOnly = req.nextUrl.searchParams.get("preview") === "1";
+  const router = entityOverride ? null : buildRouter();
   const form = await req.formData();
   const files = form.getAll("files") as File[];
   if (files.length === 0) {
@@ -45,6 +52,15 @@ export async function POST(req: NextRequest) {
     extract_preview: string;
     extractor?: string;
     error?: string;
+    /** Detailed facts learned from this file (for the inspector UI). */
+    fact_details?: Array<{
+      entity: string;
+      predicate: string;
+      value: string;
+      quote: string;
+    }>;
+    /** Source id created for this file. */
+    source_id?: string;
   }> = [];
 
   for (const file of files) {
@@ -52,16 +68,58 @@ export async function POST(req: NextRequest) {
       const buf = Buffer.from(await file.arrayBuffer());
       const mime = (file.type || "").toLowerCase();
       const { text, kind, extractor } = await extractText(file.name, mime, buf);
+
+      // Route per file: if no override, run a probe extraction on the text and
+      // pick the entity matching recipient.name (letters) or invoice.vendor
+      // (rechnungen). Auto-creates the entity when no match exists, so an
+      // empty engine self-bootstraps from documents alone.
+      const entity = entityOverride ?? routeForDoc(router!, file.name, text).entity;
+      const sourceTitle =
+        kind === "image-ocr"
+          ? `${file.name} (extracted by Gemini vision)`
+          : file.name;
+      const sourcePrior = inferPrior(kind, file.name);
+
+      if (previewOnly) {
+        // Run extraction without committing — same code path as ingest, just
+        // skipping the writes. The dashboard's review modal renders this and
+        // posts the (possibly edited) facts back via /api/upload/commit.
+        const probe = await import("@/lib/extractor").then((m) =>
+          m.extractSync(entity, {
+            id: "preview",
+            kind,
+            title: sourceTitle,
+            ingested_at: new Date().toISOString(),
+            raw_excerpt: text.slice(0, 8192),
+            source_prior: sourcePrior,
+          }),
+        );
+        results.push({
+          name: file.name,
+          size: buf.byteLength,
+          kind,
+          facts: probe.length,
+          conflicts: 0,
+          latency_ms: 0,
+          extract_preview: text.slice(0, 8192),
+          extractor,
+          fact_details: probe.map((f) => ({
+            entity,
+            predicate: f.predicate,
+            value: String(f.value ?? ""),
+            quote: f.span?.quote ?? "",
+          })),
+        });
+        continue;
+      }
+
       const result = await ingest({
         entity,
         source: {
           kind,
-          // Honest label (FR-11): when text came out of Gemini vision we mark
-          // the title so the proof-lens UI can show "extracted by Gemini vision".
-          title:
-            kind === "image-ocr" ? `${file.name} (extracted by Gemini vision)` : file.name,
-          raw_excerpt: text.slice(0, 8192), // cap for demo
-          source_prior: inferPrior(kind, file.name),
+          title: sourceTitle,
+          raw_excerpt: text.slice(0, 8192),
+          source_prior: sourcePrior,
         },
       });
       results.push({
@@ -73,6 +131,13 @@ export async function POST(req: NextRequest) {
         latency_ms: result.latency_ms,
         extract_preview: text.slice(0, 200),
         extractor,
+        source_id: result.source.id,
+        fact_details: result.facts.slice(0, 30).map((f) => ({
+          entity: f.entity,
+          predicate: f.predicate,
+          value: String(f.value ?? ""),
+          quote: f.span?.quote?.slice(0, 200) ?? "",
+        })),
       });
     } catch (err) {
       results.push({
@@ -88,7 +153,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ entity, uploaded: results });
+  return NextResponse.json({ uploaded: results });
 }
 
 type ExtractResult = { text: string; kind: SourceKind; extractor: string };

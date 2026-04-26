@@ -23,6 +23,19 @@ import {
   newFactId,
   newSourceId,
 } from "./db";
+import { classifyEmailIncident } from "./classify";
+
+// Emails where keyword scoring couldn't pick an incident type but the
+// category metadata says it IS an incident. We collect them during the
+// sync seed pass and classify with Gemini after the transaction commits.
+type PendingClassification = {
+  entityId: string;
+  sourceId: string;
+  subject: string;
+  body: string;
+  ingested_at: string;
+};
+const pendingClassifications: PendingClassification[] = [];
 
 // ── Default entity for backwards compat ─────────────────────────────────────
 
@@ -114,11 +127,35 @@ export function seedIfEmpty(database: Database.Database): void {
   // Bulk imports run outside the main transaction (they're large)
   importEmails(data);
   importBankTransactions();
+  importPdfs(data);
 
   const entityCount = database.prepare("SELECT COUNT(*) as n FROM entities").get() as { n: number };
   const factCount = database.prepare("SELECT COUNT(*) as n FROM facts").get() as { n: number };
   const sourceCount = database.prepare("SELECT COUNT(*) as n FROM sources").get() as { n: number };
   console.log(`[hausbuch] seed complete: ${entityCount.n} entities, ${factCount.n} facts, ${sourceCount.n} sources`);
+
+  // Fire-and-forget LLM classification for ambiguous incident emails.
+  // Capped + async so seed returns immediately; facts trickle in over the next
+  // ~30s. The home/dashboard auto-refresh picks them up on the next /api/stats poll.
+  if (pendingClassifications.length > 0) {
+    void classifyPending();
+  }
+}
+
+async function classifyPending(): Promise<void> {
+  const MAX = 30; // hard cap so we don't burn quota on a flood of indexed emails
+  const queue = pendingClassifications.splice(0, MAX);
+  console.log(`[hausbuch] LLM-classifying ${queue.length} ambiguous incident emails…`);
+  let resolved = 0;
+  for (const item of queue) {
+    const type = await classifyEmailIncident(item.subject, item.body);
+    if (type && type !== "other") {
+      writeFact(item.entityId, "incident.type", type, item.sourceId, item.body.slice(0, 120), item.ingested_at);
+      writeFact(item.entityId, "incident.status", "reported", item.sourceId, "gemeldet (LLM-classified)", item.ingested_at);
+      resolved++;
+    }
+  }
+  console.log(`[hausbuch] LLM classification done: ${resolved}/${queue.length} resolved`);
 }
 
 // ── WEG (Liegenschaft) ──────────────────────────────────────────────────────
@@ -484,38 +521,113 @@ function extractEmailFacts(entityId: string, source: Source, body: string, categ
   const text = (body + " " + (source.title ?? "")).toLowerCase();
   const cat = (category ?? "").toLowerCase();
 
-  // ── Incident detection (from body keywords OR category) ─────────────
+  // ── Incident detection ─────────────────────────────────────────────
+  // Score each candidate type by counting keyword matches across body+title;
+  // pick the highest-scoring type. Ties break in priority order. This avoids
+  // the previous bug where an email mentioning "Wasser tropft am Aufzug"
+  // got classified as `elevator` because the linear-priority OR-chain didn't
+  // weigh the water signal more heavily.
   const isSchaden = cat.includes("schaden") || cat.includes("mangel");
-  const hasMold = /schimmel|mold|schimmelbefall/i.test(text);
-  const hasWater = /wasser|water|feucht|wasserschaden/i.test(text);
-  const hasLock = /schloss|schluessel|tuer.*schliesst|haustuer|lock|key/i.test(text);
-  const hasHeating = /heizung|heating|thermostat/i.test(text);
-  const hasElevator = /aufzug|elevator|fahrstuhl/i.test(text);
-  const hasNoise = /ruhestoerung|laerm|noise/i.test(text);
+  const PATTERNS: Array<[string, RegExp[]]> = [
+    [
+      "water_damage",
+      [
+        /\bwasser\b/i,
+        /\bwasserschaden\b/i,
+        /\bfeucht/i,
+        /\bn(?:a|ä)sse\b/i,
+        /\bnass\b/i,
+        /\bdurchn(?:a|ä)sst/i,
+        /\btropf/i, // tropft, tropfen, Tropfen
+        /\bleck/i,
+        /\bleckage/i,
+        /\bundicht/i,
+        /\brohrbruch/i,
+        /\bwasserrohr/i,
+        /\b(?:ü|ue)berschw(?:emm|emm)/i,
+        /\bdecke[^.]*?(?:tropf|nass|undicht|wasser)/i,
+        /\bwater\b/i,
+        /\bleak/i,
+        /\bflood/i,
+      ],
+    ],
+    ["mold", [/\bschimmel/i, /\bschimmelbefall/i, /\bmold\b/i, /\bmildew/i]],
+    [
+      "heating",
+      [/\bheizung/i, /\bthermostat/i, /\bkalt[^.]{0,30}wohn/i, /\bheating\b/i, /\bboiler/i],
+    ],
+    [
+      "lock_issue",
+      [
+        /\bschloss/i,
+        /\bschl(?:ü|ue)ssel/i,
+        /\btuer.*schliesst/i,
+        /\bhaustuer/i,
+        /\bschlie(?:ß|ss)anlage/i,
+        /\block\b/i,
+        /\bkey\b/i,
+      ],
+    ],
+    ["elevator", [/\baufzug/i, /\belevator/i, /\bfahrstuhl/i, /\blift\b/i]],
+    ["noise", [/\bruhest(?:ö|oe)rung/i, /\bl(?:ä|ae)rm\b/i, /\bnoise\b/i]],
+  ];
 
-  if (isSchaden || hasMold || hasWater || hasLock || hasHeating || hasElevator) {
-    const type = hasMold ? "mold" :
-                 hasWater ? "water_damage" :
-                 hasLock ? "lock_issue" :
-                 hasHeating ? "heating" :
-                 hasElevator ? "elevator" :
-                 hasNoise ? "noise" : "other";
+  const scored = PATTERNS.map(([type, regs]) => ({
+    type,
+    score: regs.reduce((n, r) => n + (r.test(text) ? 1 : 0), 0),
+  })).filter((x) => x.score > 0);
+
+  // Require either an explicit Schaden/Mangel category OR strong evidence
+  // (≥2 keyword hits, OR the keyword(s) live in the email subject — subject
+  // lines are intentional, body mentions can be off-hand). Prevents emails
+  // that briefly mention "tuer" or "wasser" in passing from being filed as
+  // a real incident.
+  const subject = (source.title ?? "").toLowerCase();
+  const subjectMatchedType = scored.find((s) => {
+    const regs = PATTERNS.find(([t]) => t === s.type)?.[1] ?? [];
+    return regs.some((r) => r.test(subject));
+  });
+  const top = scored.sort((a, b) => b.score - a.score)[0];
+  const hasStrongSignal = isSchaden || !!subjectMatchedType || (top && top.score >= 2);
+
+  if (hasStrongSignal && scored.length > 0) {
+    const type = subjectMatchedType?.type ?? top.type;
     writeFact(entityId, "incident.type", type, source.id, body.slice(0, 120), now);
     writeFact(entityId, "incident.status", "reported", source.id, "gemeldet", now);
+  } else if (isSchaden) {
+    // Category says it's an incident but keywords didn't recognize the type.
+    // Defer to LLM (post-seed) so the user gets coverage on paraphrased reports.
+    pendingClassifications.push({
+      entityId,
+      sourceId: source.id,
+      subject: source.title ?? "",
+      body,
+      ingested_at: now,
+    });
   }
 
   // ── Legal issues ────────────────────────────────────────────────────
-  if (cat.includes("kuendigung") || /kuendigung|k.ndigung/i.test(text)) {
+  // Strong signals only — a passing mention of "Kündigung" in a quoted reply
+  // thread or a signature should NOT mark the entity as having terminated
+  // their lease. Require: explicit category, OR subject keyword, OR an
+  // unambiguous first-person phrase in the body.
+  const subjectHasKuendigung = /k(?:ü|ue)ndigung/i.test(subject);
+  const bodyHasKuendigungIntent = /\b(?:hiermit\s+)?(?:k(?:ü|ue)ndige|k(?:ü|ue)ndigen?\s+(?:wir|hiermit))\b|fristgerecht.*k(?:ü|ue)ndig|mietvertrag.*k(?:ü|ue)ndig/i.test(body);
+  if (cat.includes("kuendigung") || subjectHasKuendigung || bodyHasKuendigungIntent) {
     writeFact(entityId, "legal.kuendigung", "true", source.id, body.slice(0, 120), now);
   }
 
-  if (/mietminderung|rent\s*reduction|miete.*minder/i.test(text)) {
+  const subjectHasMietminderung = /mietminderung|minderung\s+der\s+miete/i.test(subject);
+  const bodyHasMietminderungIntent = /\bmietminderung\b|\bmiete\s+(?:um|von)\s+\d+\s*%\s+minder|\bich\s+werde\s+die\s+miete.*mindern/i.test(body);
+  if (cat.includes("mietminderung") || subjectHasMietminderung || bodyHasMietminderungIntent) {
     writeFact(entityId, "legal.mietminderung", "true", source.id, body.slice(0, 120), now);
     const pctMatch = body.match(/(\d{1,2})\s*%/);
     if (pctMatch) writeFact(entityId, "legal.mietminderung.prozent", Number(pctMatch[1]), source.id, `${pctMatch[1]}%`, now);
   }
 
-  if (/sonderumlage|einspruch/i.test(text)) {
+  // Sonderumlage: only when subject mentions it OR body has "Einspruch gegen ... Sonderumlage"
+  const subjectHasSonderumlage = /sonderumlage/i.test(subject);
+  if (subjectHasSonderumlage || /einspruch[^.]*sonderumlage|sonderumlage[^.]*einspruch/i.test(body)) {
     writeFact(entityId, "legal.sonderumlage_dispute", "true", source.id, body.slice(0, 120), now);
   }
 
@@ -599,6 +711,184 @@ function importBankTransactions(): void {
   console.log(`[hausbuch] imported ${count} bank transactions`);
 }
 
+// ── PDF import (briefe + rechnungen + incremental letters) ──────────────────
+
+type PdfText = { file: string; text: string; bytes: number };
+
+/**
+ * Predicates that describe the SOURCE (a letter, an invoice) rather than the
+ * entity. They're useful as metadata on the Source row but pollute the entity's
+ * Context.md if treated as entity facts — every document would land 5+ duplicate
+ * "letter.issuer = Huber & Partner" rows on the WEG.
+ */
+const SOURCE_META_PREDICATES = new Set([
+  "letter.kind",
+  "letter.issuer",
+  "letter.datum",
+  "letter.ort",
+  "recipient.anrede",
+  "recipient.name",
+  "recipient.address",
+  "payment.iban",
+  "payment.bic",
+  "payment.bank",
+  "legal.steuernr",
+  "legal.ust_id",
+  "invoice.vendor",
+  "invoice.kundennr",
+]);
+
+function importPdfs(data: Stammdaten): void {
+  const pdfTextsPath = path.join(HACKATHON_DIR, "pdf_texts.json");
+  if (!fs.existsSync(pdfTextsPath)) {
+    console.log(`[hausbuch] no pdf_texts.json — run scripts/extract-pdf-texts.mjs to populate`);
+    return;
+  }
+
+  let entries: PdfText[];
+  try {
+    entries = JSON.parse(fs.readFileSync(pdfTextsPath, "utf8")) as PdfText[];
+  } catch (err) {
+    console.warn(`[hausbuch] pdf_texts.json malformed: ${String(err)}`);
+    return;
+  }
+
+  // Lookup tables for routing. We build separate maps so we can prefer a
+  // tenant match over an owner match (e.g. a Mahnung addressed to a renter).
+  const tenantByName = new Map<string, string>();
+  const ownerByName = new Map<string, string>();
+  const contractorByFirma = new Map<string, string>();
+  // Tenant → unit, owner → first owned unit, for context-md routing.
+  const tenantUnit = new Map<string, string>();
+  const ownerFirstUnit = new Map<string, string>();
+  for (const o of data.eigentuemer) {
+    ownerByName.set(`${o.vorname} ${o.nachname}`.toLowerCase(), `owner:${o.id}`);
+    if (o.einheit_ids?.[0]) ownerFirstUnit.set(`owner:${o.id}`, `unit:${o.einheit_ids[0]}`);
+  }
+  for (const m of data.mieter) {
+    tenantByName.set(`${m.vorname} ${m.nachname}`.toLowerCase(), `tenant:${m.id}`);
+    tenantUnit.set(`tenant:${m.id}`, `unit:${m.einheit_id}`);
+  }
+  for (const d of data.dienstleister) {
+    // Match either the full firma string or just its first significant token
+    // ("SecureLock Systems Ltd." → "securelock").
+    const norm = d.firma.toLowerCase();
+    contractorByFirma.set(norm, `contractor:${d.id}`);
+    const firstWord = norm.split(/\s+/)[0];
+    if (firstWord && firstWord.length > 3) {
+      contractorByFirma.set(firstWord, `contractor:${d.id}`);
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const ext = require("./extractor") as {
+    extractSync: (entity: string, source: Source) => Array<{
+      predicate: string;
+      value: string | number | boolean | null;
+      unit?: string;
+      valid_from?: string | null;
+      span: { start: number; end: number; quote: string };
+      confidence: number;
+    }>;
+  };
+
+  let totalSources = 0;
+  let totalFacts = 0;
+  let skippedMeta = 0;
+  const routingHistogram = new Map<string, number>();
+
+  for (const entry of entries) {
+    const filename = entry.file.split("/").pop() ?? entry.file;
+    const now = new Date().toISOString();
+    const sourceId = newSourceId(filename);
+    const isInvoice = /rechnungen|invoice/i.test(entry.file);
+    const isEtv = /etv_/i.test(filename);
+
+    // First pass: extract WITHOUT routing so we can read recipient.name + invoice.vendor.
+    const sourceProbe: Source = {
+      id: sourceId,
+      kind: isInvoice ? "invoice" : "letter",
+      title: filename.replace(/\.pdf$/i, ""),
+      ingested_at: now,
+      raw_excerpt: entry.text.slice(0, 8192),
+      source_prior: 0.9,
+    };
+    const facts = ext.extractSync(ENTITY, sourceProbe);
+
+    // Decide routing.
+    let entity = ENTITY;
+    let routedHow = "weg-fallback";
+
+    if (isEtv) {
+      // ETV invitations / protocols are about the WEG itself.
+      entity = ENTITY;
+      routedHow = "etv→weg";
+    } else if (isInvoice) {
+      // Vendor invoice — match the first line (vendor) against contractors.
+      const vendor = facts.find((f) => f.predicate === "invoice.vendor")?.value;
+      if (typeof vendor === "string") {
+        const v = vendor.toLowerCase();
+        for (const [name, id] of contractorByFirma) {
+          if (v.includes(name)) { entity = id; routedHow = "invoice→contractor"; break; }
+        }
+      }
+    } else {
+      // Hausverwaltung letter — recipient name lookup.
+      const recipient = facts.find((f) => f.predicate === "recipient.name")?.value;
+      if (typeof recipient === "string") {
+        const r = recipient.toLowerCase();
+        // Tenant first (most letters target renters); owner second.
+        const tid = tenantByName.get(r);
+        const oid = !tid ? ownerByName.get(r) : null;
+        if (tid) { entity = tid; routedHow = "letter→tenant"; }
+        else if (oid) { entity = oid; routedHow = "letter→owner"; }
+      }
+    }
+
+    // Now create the actual source row with the routed entity.
+    const source: Source = { ...sourceProbe, entity_id: entity };
+    insertSource(source);
+    totalSources++;
+    routingHistogram.set(routedHow, (routingHistogram.get(routedHow) ?? 0) + 1);
+
+    // Insert facts, skipping source-metadata predicates so the entity's
+    // Context.md isn't drowned in repeating "letter.issuer = Huber & Partner".
+    // Domain facts (mahnung.*, hausgeld.*, nebenkosten.*, etv.*, mieterhoehung.*,
+    // kuendigung.*, invoice.*) are kept because they describe the entity's state.
+    for (const f of facts) {
+      if (SOURCE_META_PREDICATES.has(f.predicate)) {
+        skippedMeta++;
+        continue;
+      }
+      writeFact(
+        entity,
+        f.predicate,
+        f.value,
+        sourceId,
+        f.span.quote,
+        now,
+        f.unit,
+        f.valid_from ?? undefined,
+      );
+      totalFacts++;
+    }
+  }
+
+  // Suppress unused-variable warnings for routing helpers reserved for future
+  // smarter routing (per-unit BKA → unit, per-owner Hausgeld → unit).
+  void tenantUnit;
+  void ownerFirstUnit;
+
+  const histogram = [...routingHistogram.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([k, n]) => `${k}=${n}`)
+    .join(", ");
+  console.log(
+    `[hausbuch] imported ${totalSources} PDFs · ${totalFacts} entity-facts ` +
+      `(${skippedMeta} source-meta facts kept on the source row only) · routing: ${histogram}`,
+  );
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 function makeStammdatenSource(id: string, title: string, now: string): Source {
@@ -665,13 +955,17 @@ export type ScenarioSource = {
   kind: SourceKind; title: string; raw_excerpt: string; source_prior: number;
 };
 
+// Three-stage demo scenarios — all from the same tenant (Magrit Mitschke, WE 32)
+// so the agents' answers about her unit measurably evolve as facts arrive.
+// Each excerpt includes the unit anchor (WE 32) and the tenant surname so the
+// relevance gate accepts it and the extractor can attach to tenant:MIE-016.
 export const DEMO_SCENARIOS: ScenarioSource[] = [
   {
     id: "mold-report",
     label: "Schimmel-Meldung",
     date: "2026-01-03",
     icon: "⚠",
-    blurb: "Tenant Magrit Mitschke reports mold + water damage in WE 32, threatens 15% rent reduction",
+    blurb: "Magrit Mitschke (WE 32) reports mold + water damage, threatens 15% rent reduction",
     kind: "email",
     title: "Mietminderung Ankuendigung — Magrit Mitschke",
     raw_excerpt:
@@ -679,27 +973,27 @@ export const DEMO_SCENARIOS: ScenarioSource[] = [
     source_prior: 0.7,
   },
   {
-    id: "door-broken",
-    label: "Haustür defekt",
-    date: "2026-01-08",
-    icon: "🔒",
-    blurb: "Front door of Haus 16 won't close — security concern reported by Galina Wohlgemut",
+    id: "heating-failure",
+    label: "Heizung defekt",
+    date: "2026-01-09",
+    icon: "🔥",
+    blurb: "Magrit Mitschke (WE 32) follow-up: heating now also failed — situation worsening",
     kind: "email",
-    title: "Haustuer schliesst nicht — Galina Wohlgemut",
+    title: "Heizung defekt — Magrit Mitschke (WE 32)",
     raw_excerpt:
-      "Guten Abend, die Haustuer von Haus 16 schliesst seit heute Mittag nicht mehr selbststaendig. Das ist sicherheitstechnisch problematisch. Galina Wohlgemut",
-    source_prior: 0.7,
+      "Sehr geehrte Verwaltung, zusaetzlich zu der bekannten Schimmel- und Wasserschaden-Problematik in meiner Wohnung WE 32 ist seit gestern Abend auch die Heizung komplett ausgefallen. Bei -3°C Aussentemperatur ist das nicht zumutbar. Bitte umgehende Beauftragung eines Heizungsmonteurs. Magrit Mitschke",
+    source_prior: 0.75,
   },
   {
-    id: "key-loss",
-    label: "Schlüsselverlust",
-    date: "2026-01-10",
-    icon: "🔑",
-    blurb: "Tenant Marliese Hermann (WE 02) lost key — Schließanlage may need replacing",
-    kind: "email",
-    title: "Schluesselverlust — Marliese Hermann",
+    id: "lawyer-letter",
+    label: "Anwaltschreiben",
+    date: "2026-01-15",
+    icon: "⚖",
+    blurb: "Magrit Mitschke (WE 32) escalates via attorney — 14-day deadline before court action",
+    kind: "letter",
+    title: "Anwaltliches Aufforderungsschreiben — WE 32 Mitschke",
     raw_excerpt:
-      "Hallo, ich habe leider meinen Wohnungsschluessel verloren. Die Schliessanlage muesste wahrscheinlich getauscht werden. Wie gehe ich am besten vor? Gruesse Marliese Hermann WE 02",
-    source_prior: 0.65,
+      "Sehr geehrte Damen und Herren, in der Angelegenheit unserer Mandantin Frau Magrit Mitschke, Mieterin der Wohnung WE 32, fordern wir Sie hiermit auf, die seit Oktober 2025 angezeigten Maengel (Wasserschaden, Schimmel, Heizungsausfall) binnen 14 Tagen zu beseitigen. Andernfalls werden wir gerichtliche Schritte einleiten. Mit freundlichen Gruessen, Kanzlei Berger & Partner.",
+    source_prior: 0.92,
   },
 ];

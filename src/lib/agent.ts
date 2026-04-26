@@ -87,20 +87,35 @@ export async function runAgent(input: AgentInput): Promise<AgentResponse> {
     ? `Searching ${relatedEntities.length} entities for relevant facts...`
     : `Durchsuche ${relatedEntities.length} Entitäten nach relevanten Fakten...`);
 
-  let contextParts: string[] = [];
+  const contextParts: string[] = [];
   let totalFacts = 0;
+  const MAX_CHARS_PER_ENTITY = 24_000; // ~6K tokens — keeps LLM latency under 2s
+  const TOTAL_BUDGET = 80_000;          // ~20K tokens across all entities
+  let usedChars = 0;
 
   for (const entity of relatedEntities.slice(0, 5)) {
-    const contextMd = render(entity.id, { detail: 3 });
+    if (usedChars > TOTAL_BUDGET) break;
+    // Drop detail to 2 for the secondary entities; 3 only for the first.
+    const detail = contextParts.length === 0 ? 3 : 2;
+    let contextMd = render(entity.id, { detail });
+    if (contextMd.length > MAX_CHARS_PER_ENTITY) {
+      contextMd = contextMd.slice(0, MAX_CHARS_PER_ENTITY) + "\n…(truncated)\n";
+    }
     contextParts.push(`\n--- Entity: ${entity.name} (${entity.type}: ${entity.id}) ---\n${contextMd}`);
-    const facts = getAllFactsForEntity(entity.id).filter(f => f.known_to === null);
-    totalFacts += facts.length;
+    usedChars += contextMd.length;
+    // Count facts cheaply from the rendered trailer instead of re-fetching.
+    const trailer = contextMd.match(/Hausbuch · (\d+) facts/);
+    totalFacts += trailer ? Number(trailer[1]) : 0;
   }
 
-  // If no specific entity, check if the message mentions known names/units
+  // If no specific entity, surface a compact WEG snapshot — detail=1 keeps
+  // it under ~10KB instead of the 127KB full render. Faster, focused.
   if (relatedEntities.length === 0 && !targetEntity) {
-    step("searching", "Kein spezifischer Kontext — suche in der gesamten WEG...");
-    const wegContext = render("weg:immanuelkirchstr-26", { detail: 2 });
+    step("searching", "No specific match — using WEG-level summary");
+    let wegContext = render("weg:immanuelkirchstr-26", { detail: 1 });
+    if (wegContext.length > MAX_CHARS_PER_ENTITY) {
+      wegContext = wegContext.slice(0, MAX_CHARS_PER_ENTITY) + "\n…(truncated)\n";
+    }
     contextParts.push(wegContext);
     entitiesAccessed.push("weg:immanuelkirchstr-26");
   }

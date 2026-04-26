@@ -21,11 +21,18 @@ export default function ContextPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const entity = id.startsWith("property:") ? id : `property:${id}`;
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(id);
+  } catch {
+    decoded = id;
+  }
+  const entity = decoded.includes(":") ? decoded : `weg:${decoded}`;
 
   const [data, setData] = useState<ContextResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Fact | null>(null);
+  const [showRaw, setShowRaw] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -48,7 +55,8 @@ export default function ContextPage({
   const buildingName = useMemo(() => {
     if (!data) return entity;
     const addr = data.facts.find((f) => f.predicate === "identity.address");
-    return addr ? String(addr.value) : entity;
+    const name = data.facts.find((f) => f.predicate === "identity.name");
+    return String(name?.value ?? addr?.value ?? entity);
   }, [data, entity]);
 
   const selectedSource = useMemo(() => {
@@ -67,7 +75,7 @@ export default function ContextPage({
             className="text-[11px] font-mono uppercase tracking-wider mb-3"
             style={{ color: "var(--fg-dim)" }}
           >
-            Context.md
+            Context.md · {entity.split(":")[0]}
           </p>
           <h1
             className="font-display"
@@ -88,57 +96,67 @@ export default function ContextPage({
               <Stat n={data.counts.facts} label="facts" />
               <Stat n={data.counts.sources} label="sources" />
               {data.counts.conflicts > 0 && (
-                <Stat
-                  n={data.counts.conflicts}
-                  label="conflicts"
-                  tone="warning"
-                />
+                <Stat n={data.counts.conflicts} label="conflicts" tone="warning" />
               )}
-              <span
-                className="font-mono text-[11px]"
-                style={{ color: "var(--fg-dim)" }}
-              >
-                entity · {data.entity}
+              <span className="font-mono text-[11px]" style={{ color: "var(--fg-dim)" }}>
+                {data.entity}
               </span>
+              <button
+                onClick={() => setShowRaw((s) => !s)}
+                className="ml-auto font-mono text-[11px] px-2 py-1 rounded border"
+                style={{
+                  borderColor: "var(--border-muted)",
+                  color: showRaw ? "var(--brand)" : "var(--fg-muted)",
+                  background: showRaw ? "var(--brand-wash)" : "transparent",
+                  cursor: "pointer",
+                }}
+              >
+                {showRaw ? "showing raw" : "view raw"}
+              </button>
             </div>
           )}
         </header>
 
-        {/* Skeleton Timeline (Phase 3 makes it interactive) */}
+        {/* Timeline scrubber */}
         {data && (
           <div className="mb-10">
             <TimelineScrubber facts={data.facts} at={new Date().toISOString()} />
           </div>
         )}
 
-        {/* Body */}
         {error && (
-          <p
-            className="text-[13px] font-mono"
-            style={{ color: "var(--danger)" }}
-          >
+          <p className="text-[13px] font-mono" style={{ color: "var(--danger)" }}>
             Failed to load: {error}
           </p>
         )}
+        {!data && !error && <p style={{ color: "var(--fg-muted)" }}>Loading…</p>}
 
-        {!data && !error && (
-          <p style={{ color: "var(--fg-muted)" }}>Loading…</p>
+        {data && !showRaw && (
+          <RenderedContext
+            markdown={data.markdown}
+            facts={data.facts}
+            sources={data.sources}
+            onSelectFact={setSelected}
+          />
         )}
 
-        {data && (
-          <article
-            className="rounded-lg border p-6 md:p-8"
+        {data && showRaw && (
+          <pre
+            className="mono"
             style={{
-              borderColor: "var(--border)",
+              padding: 20,
+              borderRadius: 10,
+              border: "1px solid var(--border)",
               background: "var(--bg-elevated)",
+              fontSize: 11.5,
+              lineHeight: 1.55,
+              color: "var(--fg)",
+              overflow: "auto",
+              whiteSpace: "pre-wrap",
             }}
           >
-            <InteractiveContextMarkdown
-              markdown={data.markdown}
-              facts={data.facts}
-              onSelectFact={setSelected}
-            />
-          </article>
+            {data.markdown}
+          </pre>
         )}
       </main>
 
@@ -175,173 +193,468 @@ function Stat({
   );
 }
 
-/**
- * Parse the rendered Context.md and make each `<!-- fact:IDENT -->...<!-- /fact:IDENT -->`
- * block clickable. Preserves the HTML-comment anchors in the output (they render as
- * invisible on screen but are the contract for surgical patches downstream).
- */
-function InteractiveContextMarkdown({
+// ── Rendered (human-readable) view ───────────────────────────────────────────
+
+type Segment =
+  | { kind: "section"; title: string }
+  | { kind: "fact"; ident: string; raw: string }
+  | { kind: "conflict"; key: string; raw: string }
+  | { kind: "blockquote"; text: string }
+  | { kind: "footer"; text: string }
+  | { kind: "blank" };
+
+function parseMarkdown(md: string): Segment[] {
+  const out: Segment[] = [];
+  const factRe = /<!-- fact:([a-f0-9]+) -->\n?([\s\S]*?)\n?<!-- \/fact:\1 -->/g;
+  const conflictRe = /<!-- conflict:([^ ]+?) -->\n?([\s\S]*?)\n?<!-- \/conflict:\1 -->/g;
+
+  // Find all anchored ranges first so we can split the text around them.
+  type Anchor = { start: number; end: number; node: Segment };
+  const anchors: Anchor[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = factRe.exec(md)) !== null) {
+    anchors.push({
+      start: m.index,
+      end: m.index + m[0].length,
+      node: { kind: "fact", ident: m[1], raw: m[2] },
+    });
+  }
+  while ((m = conflictRe.exec(md)) !== null) {
+    anchors.push({
+      start: m.index,
+      end: m.index + m[0].length,
+      node: { kind: "conflict", key: m[1], raw: m[2] },
+    });
+  }
+  anchors.sort((a, b) => a.start - b.start);
+
+  let cursor = 0;
+  const emitText = (text: string) => {
+    for (const line of text.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        out.push({ kind: "blank" });
+      } else if (trimmed.startsWith("# ")) {
+        out.push({ kind: "section", title: trimmed.slice(2) });
+      } else if (trimmed.startsWith("## ")) {
+        out.push({ kind: "section", title: trimmed.slice(3) });
+      } else if (trimmed.startsWith("> ")) {
+        out.push({ kind: "blockquote", text: trimmed.slice(2) });
+      } else if (trimmed.startsWith("<!--") && trimmed.endsWith("-->")) {
+        // The trailer "Hausbuch · N facts · ..." is a meta comment we surface
+        // as a small footer. Other anonymous comments are skipped.
+        const inner = trimmed.replace(/^<!--\s*/, "").replace(/\s*-->$/, "");
+        if (inner.includes("Hausbuch") || inner.includes("facts")) {
+          out.push({ kind: "footer", text: inner });
+        }
+      }
+      // Non-fact mono lines (rare — only when the renderer emits something
+      // outside an anchor) are skipped silently.
+    }
+  };
+
+  for (const a of anchors) {
+    if (a.start > cursor) emitText(md.slice(cursor, a.start));
+    out.push(a.node);
+    cursor = a.end;
+  }
+  if (cursor < md.length) emitText(md.slice(cursor));
+  return out;
+}
+
+function RenderedContext({
   markdown,
   facts,
+  sources,
   onSelectFact,
 }: {
   markdown: string;
   facts: Fact[];
-  onSelectFact: (fact: Fact) => void;
+  sources: Source[];
+  onSelectFact: (f: Fact) => void;
 }) {
   const byIdent = useMemo(() => {
     const m = new Map<string, Fact>();
     for (const f of facts) m.set(f.ident, f);
     return m;
   }, [facts]);
+  const sourceById = useMemo(() => {
+    const m = new Map<string, Source>();
+    for (const s of sources) m.set(s.id, s);
+    return m;
+  }, [sources]);
 
-  // Split markdown by the fact anchor comments. Preserve raw text outside anchors.
-  const segments = useMemo(() => {
-    const out: Array<
-      | { kind: "text"; text: string }
-      | { kind: "fact"; ident: string; inner: string }
-    > = [];
-    const re = /<!-- fact:([a-f0-9]+) -->([\s\S]*?)<!-- \/fact:\1 -->/g;
-    let cursor = 0;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(markdown)) !== null) {
-      if (m.index > cursor) {
-        out.push({ kind: "text", text: markdown.slice(cursor, m.index) });
-      }
-      out.push({ kind: "fact", ident: m[1], inner: m[2] });
-      cursor = m.index + m[0].length;
+  const segments = useMemo(() => parseMarkdown(markdown), [markdown]);
+
+  // Group consecutive fact/conflict segments inside each section so we render
+  // them as a single table with consistent grid widths.
+  type Block =
+    | { kind: "section"; title: string }
+    | { kind: "rows"; rows: Array<Extract<Segment, { kind: "fact" | "conflict" }>> }
+    | { kind: "blockquote"; text: string }
+    | { kind: "footer"; text: string };
+  const blocks: Block[] = [];
+  let buffer: Array<Extract<Segment, { kind: "fact" | "conflict" }>> = [];
+  const flush = () => {
+    if (buffer.length) {
+      blocks.push({ kind: "rows", rows: buffer });
+      buffer = [];
     }
-    if (cursor < markdown.length) {
-      out.push({ kind: "text", text: markdown.slice(cursor) });
+  };
+  for (const s of segments) {
+    if (s.kind === "fact" || s.kind === "conflict") {
+      buffer.push(s);
+    } else if (s.kind === "section") {
+      flush();
+      blocks.push({ kind: "section", title: s.title });
+    } else if (s.kind === "blockquote") {
+      flush();
+      blocks.push({ kind: "blockquote", text: s.text });
+    } else if (s.kind === "footer") {
+      flush();
+      blocks.push({ kind: "footer", text: s.text });
     }
-    return out;
-  }, [markdown]);
+  }
+  flush();
 
   return (
-    <div className="text-[14px] leading-relaxed" style={{ color: "var(--fg)" }}>
-      {segments.map((seg, i) => {
-        if (seg.kind === "text") {
-          return <RenderText key={i} text={seg.text} />;
+    <article style={{ display: "flex", flexDirection: "column", gap: 28 }}>
+      {blocks.map((b, i) => {
+        if (b.kind === "section") {
+          return <SectionHeading key={i}>{b.title}</SectionHeading>;
         }
-        const fact = byIdent.get(seg.ident);
-        return (
-          <FactLine
-            key={i}
-            text={seg.inner}
-            onClick={fact ? () => onSelectFact(fact) : undefined}
-          />
-        );
-      })}
-    </div>
-  );
-}
-
-/**
- * Minimal markdown renderer for the subset the renderer emits:
- *  - h1 / h2 / h3
- *  - > blockquote
- *  - plain paragraphs (single line each)
- * For Phase 1.5 we render the raw text in a stable, readable way. A proper
- * markdown parser can land later if the renderer grows richer output.
- */
-function RenderText({ text }: { text: string }) {
-  const lines = text.split("\n");
-  return (
-    <>
-      {lines.map((line, i) => {
-        if (!line.trim()) return <div key={i} className="h-2" />;
-        if (line.startsWith("# ")) {
+        if (b.kind === "rows") {
           return (
-            <h2
+            <div
               key={i}
-              className="mt-6 mb-2 text-[18px] font-semibold tracking-tight"
-              style={{ color: "var(--fg)", letterSpacing: "-0.01em" }}
+              style={{
+                border: "1px solid var(--border)",
+                borderRadius: 12,
+                background: "var(--bg-elevated)",
+                overflow: "hidden",
+              }}
             >
-              {line.slice(2)}
-            </h2>
+              {b.rows.map((row, ri) => {
+                const last = ri === b.rows.length - 1;
+                if (row.kind === "fact") {
+                  const fact = byIdent.get(row.ident);
+                  return (
+                    <FactRow
+                      key={ri}
+                      raw={row.raw}
+                      fact={fact}
+                      sourceById={sourceById}
+                      onClick={fact ? () => onSelectFact(fact) : undefined}
+                      bordered={!last}
+                    />
+                  );
+                }
+                return <ConflictRow key={ri} raw={row.raw} bordered={!last} />;
+              })}
+            </div>
           );
         }
-        if (line.startsWith("## ")) {
-          return (
-            <h3
-              key={i}
-              className="mt-5 mb-2 text-[13px] font-mono uppercase tracking-wider"
-              style={{ color: "var(--fg-dim)" }}
-            >
-              {line.slice(3)}
-            </h3>
-          );
-        }
-        if (line.startsWith("> ")) {
+        if (b.kind === "blockquote") {
           return (
             <p
               key={i}
-              className="italic pl-3 border-l my-2 text-[13px]"
+              className="serif-italic"
               style={{
-                borderColor: "var(--border-muted)",
+                fontSize: 14,
                 color: "var(--fg-muted)",
-                fontFamily: "var(--font-serif)",
+                paddingLeft: 14,
+                borderLeft: "2px solid var(--border-muted)",
+                margin: 0,
               }}
             >
-              {line.slice(2)}
+              {b.text}
             </p>
           );
         }
         return (
-          <p key={i} className="py-0.5 font-mono text-[13px]">
-            {line}
+          <p
+            key={i}
+            className="mono"
+            style={{ fontSize: 11, color: "var(--fg-dim)", margin: 0 }}
+          >
+            {b.text}
           </p>
         );
       })}
-    </>
+    </article>
   );
 }
 
-/**
- * One anchored fact block. Clickable — opens the provenance drawer.
- */
-function FactLine({
-  text,
+function SectionHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
+      <h2
+        style={{
+          fontSize: 18,
+          fontWeight: 500,
+          letterSpacing: "-0.01em",
+          color: "var(--fg)",
+          margin: 0,
+        }}
+      >
+        {children}
+      </h2>
+      <span style={{ flex: 1, height: 1, background: "var(--border-muted)" }} />
+    </div>
+  );
+}
+
+// Parse a fact line "  predicate-name    value  ^[citation] · × N sources (also: …)"
+type ParsedFactLine = {
+  predicate: string;
+  value: string;
+  citation: string | null;
+  corroboration: string | null;
+};
+function parseFactLine(raw: string): ParsedFactLine {
+  // Citation suffix: take everything after the LAST "  ^[".
+  const trimmed = raw.trim();
+  const citeIdx = trimmed.lastIndexOf("^[");
+  let head = trimmed;
+  let citation: string | null = null;
+  let corroboration: string | null = null;
+  if (citeIdx >= 0) {
+    head = trimmed.slice(0, citeIdx).trim();
+    const tail = trimmed.slice(citeIdx + 2);
+    const closeIdx = tail.indexOf("]");
+    if (closeIdx >= 0) {
+      citation = tail.slice(0, closeIdx);
+      const rest = tail.slice(closeIdx + 1).trim();
+      // " · × 5 sources (also: A; B)"
+      const corroMatch = rest.match(/×\s*\d+\s*sources?[^\n]*/);
+      if (corroMatch) corroboration = corroMatch[0];
+    }
+  }
+  // head now looks like "predicate.name    value"
+  // Split at the longest run of >= 2 spaces.
+  const m = head.match(/^(\S+)\s{2,}(.+)$/);
+  if (m) return { predicate: m[1], value: m[2].trim(), citation, corroboration };
+  // Fallback: first whitespace as separator
+  const parts = head.split(/\s+/);
+  return {
+    predicate: parts[0] ?? "",
+    value: parts.slice(1).join(" "),
+    citation,
+    corroboration,
+  };
+}
+
+function FactRow({
+  raw,
+  fact,
+  sourceById,
   onClick,
+  bordered,
 }: {
-  text: string;
+  raw: string;
+  fact: Fact | undefined;
+  sourceById: Map<string, Source>;
   onClick?: () => void;
+  bordered: boolean;
 }) {
-  const trimmed = text.trim();
-  const canClick = Boolean(onClick);
+  const parsed = parseFactLine(raw);
+  const src = fact ? sourceById.get(fact.source) : null;
+
   return (
     <div
-      role={canClick ? "button" : undefined}
-      tabIndex={canClick ? 0 : undefined}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
       onClick={onClick}
       onKeyDown={
-        canClick
+        onClick
           ? (e) => {
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
-                onClick?.();
+                onClick();
               }
             }
           : undefined
       }
-      className={`group flex items-start gap-2 -mx-2 px-2 py-1 rounded transition-colors font-mono text-[13px] ${
-        canClick
-          ? "cursor-pointer hover:bg-[color:var(--bg-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--brand)]"
-          : ""
-      }`}
+      style={{
+        display: "grid",
+        gridTemplateColumns: "minmax(190px, 1fr) minmax(180px, 1.4fr) auto",
+        gap: 18,
+        padding: "12px 18px",
+        borderBottom: bordered ? "1px solid var(--border-muted)" : "none",
+        cursor: onClick ? "pointer" : "default",
+        alignItems: "baseline",
+        transition: "background 100ms",
+      }}
+      onMouseEnter={(e) => {
+        if (onClick) e.currentTarget.style.background = "var(--bg-hover)";
+      }}
+      onMouseLeave={(e) => {
+        if (onClick) e.currentTarget.style.background = "transparent";
+      }}
     >
-      <span className="flex-1" style={{ color: "var(--fg)" }}>
-        {trimmed}
+      <span
+        className="mono"
+        style={{
+          fontSize: 11,
+          color: "var(--fg-dim)",
+          letterSpacing: "0.01em",
+          textTransform: "lowercase",
+        }}
+      >
+        {parsed.predicate}
       </span>
-      {canClick && (
-        <span
-          className="shrink-0 text-[11px] opacity-0 group-hover:opacity-100 transition-opacity"
-          style={{ color: "var(--brand-tint)" }}
-          aria-hidden
-        >
-          details →
+      <span
+        style={{
+          fontSize: 14,
+          color: "var(--fg)",
+          fontWeight: 500,
+          letterSpacing: "-0.005em",
+          wordBreak: "break-word",
+        }}
+      >
+        {parsed.value}
+        {fact?.valid_from && fact.valid_from !== fact.valid_to && (
+          <span className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", marginLeft: 8 }}>
+            {fact.valid_from.slice(0, 10)}{fact.valid_to ? ` → ${fact.valid_to.slice(0, 10)}` : " →"}
+          </span>
+        )}
+      </span>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+        {parsed.citation && (
+          <span
+            className="mono"
+            style={{
+              fontSize: 10,
+              color: "var(--brand)",
+              padding: "2px 8px",
+              borderRadius: 999,
+              background: "var(--brand-wash)",
+              border: "1px solid var(--brand-line)",
+              maxWidth: 220,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+            title={src?.title ?? parsed.citation}
+          >
+            {parsed.citation}
+          </span>
+        )}
+        {parsed.corroboration && (
+          <span className="mono" style={{ fontSize: 9, color: "var(--fg-dim)" }}>
+            {parsed.corroboration}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ConflictRow({ raw, bordered }: { raw: string; bordered: boolean }) {
+  // Conflict block format:
+  //   key:  ⚠ conflict
+  //     → value (eff. 2024-01-01)  ^[Source A]
+  //     → value (eff. 2024-02-01)  ^[Source B]
+  //     posterior: P(value)=0.x · P(value)=0.y
+  const lines = raw.split("\n").map((l) => l.trim()).filter(Boolean);
+  const headLine = lines.find((l) => l.includes("conflict")) ?? lines[0];
+  const claims = lines
+    .filter((l) => l.startsWith("→ "))
+    .map((l) => {
+      const cite = l.match(/\^\[([^\]]+)\]/);
+      const text = l.replace(/\s*\^\[[^\]]+\]\s*$/, "").replace(/^→\s*/, "");
+      return { text, citation: cite?.[1] ?? null };
+    });
+  const posteriorLine = lines.find((l) => l.startsWith("posterior:"));
+  const probabilities = posteriorLine
+    ? Array.from(posteriorLine.matchAll(/P\(([^)]+)\)\s*=\s*([\d.]+)/g)).map((m) => ({
+        value: m[1],
+        p: Number(m[2]),
+      }))
+    : [];
+  const predicateName = headLine.split(":")[0].trim();
+
+  return (
+    <div
+      style={{
+        padding: "14px 18px",
+        borderBottom: bordered ? "1px solid var(--border-muted)" : "none",
+        background: "rgba(180,83,9,0.04)",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 8 }}>
+        <span className="mono" style={{ fontSize: 11, color: "var(--fg-dim)" }}>
+          {predicateName}
         </span>
-      )}
+        <span
+          className="mono"
+          style={{
+            fontSize: 10,
+            color: "var(--high)",
+            textTransform: "uppercase",
+            letterSpacing: "0.06em",
+          }}
+        >
+          ⚠ conflict
+        </span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {claims.map((c, i) => {
+          const prob = probabilities[i]?.p ?? 0;
+          return (
+            <div key={i}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "baseline",
+                  fontSize: 13,
+                  marginBottom: 4,
+                }}
+              >
+                <span style={{ color: "var(--fg)", fontWeight: 500 }}>{c.text}</span>
+                {prob > 0 && (
+                  <span
+                    className="mono"
+                    style={{
+                      fontSize: 11,
+                      color: prob >= 0.5 ? "var(--brand)" : "var(--fg-muted)",
+                    }}
+                  >
+                    P = {prob.toFixed(2)}
+                  </span>
+                )}
+              </div>
+              <div
+                style={{
+                  height: 6,
+                  background: "var(--bg)",
+                  borderRadius: 3,
+                  overflow: "hidden",
+                  border: "1px solid var(--border-muted)",
+                }}
+              >
+                <div
+                  style={{
+                    width: `${Math.max(0, Math.min(1, prob)) * 100}%`,
+                    height: "100%",
+                    background: prob >= 0.5 ? "var(--brand)" : "var(--fg-dim)",
+                    transition: "width 240ms ease-out",
+                  }}
+                />
+              </div>
+              {c.citation && (
+                <span
+                  className="mono"
+                  style={{ fontSize: 10, color: "var(--brand)", marginTop: 4, display: "inline-block" }}
+                >
+                  ^[{c.citation}]
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

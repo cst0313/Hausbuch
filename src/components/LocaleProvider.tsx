@@ -64,11 +64,13 @@ export function useLocale(): LocaleContextValue {
 // Add keys here; components call t("key").
 // ─────────────────────────────────────────────
 const copy: Record<string, { en: string; de: string }> = {
+  "nav.dashboard": { en: "Dashboard", de: "Übersicht" },
   "nav.inbox": { en: "Inbox", de: "Posteingang" },
   "nav.queue": { en: "Queue", de: "Warteschlange" },
-  "nav.context": { en: "Buildings", de: "Gebäude" },
   "nav.audit": { en: "Audit", de: "Audit" },
+  "nav.docs": { en: "Docs", de: "Dokumentation" },
   "nav.research": { en: "Research", de: "Forschung" },
+  "nav.sandbox": { en: "Sandbox", de: "Sandbox" },
 
   "hero.eyebrow": { en: "The context engine for property managers", de: "Die Kontextmaschine für Hausverwalter" },
   "hero.title": {
@@ -113,6 +115,120 @@ const copy: Record<string, { en: string; de: string }> = {
   "inbox.section.new": { en: "What's new", de: "Was ist neu" },
   "inbox.section.decide": { en: "What needs a decision", de: "Was entschieden werden muss" },
   "inbox.section.changed": { en: "What changed", de: "Was sich geändert hat" },
+  "inbox.heading": { en: "Open items", de: "Vorgangsliste" },
+  "inbox.heading.subtitle": {
+    en: "Open items, prioritized by urgency. Recommended next steps per item.",
+    de: "Offene Vorgänge, priorisiert nach Dringlichkeit. Empfohlene nächste Schritte pro Vorgang.",
+  },
+  "inbox.count": { en: "items", de: "Vorgänge" },
+  "inbox.loading": { en: "Loading items…", de: "Lade Vorgänge…" },
+  "inbox.error": { en: "Error:", de: "Fehler:" },
+  "inbox.draft.to": { en: "To:", de: "An:" },
+  "inbox.draft.subject": { en: "Subject:", de: "Betreff:" },
+  "inbox.draft.drafting": { en: "Gemini drafting…", de: "Gemini erstellt Entwurf…" },
+  "inbox.draft.copy": { en: "Copy", de: "Kopieren" },
+  "inbox.email_thread.one": { en: "email in thread", de: "E-Mail im Verlauf" },
+  "inbox.email_thread.many": { en: "emails in thread", de: "E-Mails im Verlauf" },
+  "inbox.more": { en: "more", de: "weitere" },
+  "inbox.severity.critical": { en: "Critical", de: "Kritisch" },
+  "inbox.severity.high": { en: "High", de: "Hoch" },
+  "inbox.severity.medium": { en: "Medium", de: "Mittel" },
+  "inbox.severity.low": { en: "Low", de: "Niedrig" },
+  "inbox.entity.tenant": { en: "Tenant", de: "Mieter" },
+  "inbox.entity.owner": { en: "Owner", de: "Eigentümer" },
+  "inbox.entity.contractor": { en: "Contractor", de: "Dienstleister" },
+  "inbox.entity.unit": { en: "Unit", de: "Einheit" },
+  "inbox.entity.building": { en: "Building", de: "Gebäude" },
+  "inbox.entity.weg": { en: "WEG", de: "WEG" },
+
+  "audit.heading": { en: "Audit Log", de: "Audit-Log" },
+  "audit.subtitle": {
+    en: "Every system action — transparent and replayable. No silent step.",
+    de: "Jede Aktion des Systems — transparent und nachvollziehbar. Kein stiller Arbeitsschritt.",
+  },
+  "audit.filter.all": { en: "All", de: "Alle" },
+  "audit.loading": { en: "Loading…", de: "Lade…" },
+  "audit.empty": {
+    en: "No actions recorded yet. Actions are logged on ingest, queries, and approvals.",
+    de: "Noch keine Aktionen aufgezeichnet. Aktionen werden bei Ingest, Abfragen und Genehmigungen protokolliert.",
+  },
+  "audit.input": { en: "INPUT", de: "EINGABE" },
+  "audit.output": { en: "OUTPUT", de: "AUSGABE" },
+
+  // ── Dashboard chrome ─────────────────────────────────────────────────────
+  "dash.greeting.morning":   { en: "Good morning.",   de: "Guten Morgen." },
+  "dash.greeting.afternoon": { en: "Good afternoon.", de: "Guten Tag." },
+  "dash.greeting.evening":   { en: "Good evening.",   de: "Guten Abend." },
+
+  "dash.headline.thing.singular": { en: "thing",  de: "Vorgang" },
+  "dash.headline.thing.plural":   { en: "things", de: "Vorgänge" },
+  "dash.headline.needs.singular": { en: "needs",  de: "benötigt" },
+  "dash.headline.needs.plural":   { en: "need",   de: "benötigen" },
+  "dash.headline.tail":           { en: "a decision today.", de: "heute eine Entscheidung." },
+  "dash.headline.coda":           { en: "What needs you next?", de: "Was braucht Sie als Nächstes?" },
+
+  "dash.lede.before_kbd": {
+    en: "Triage from the top. Drafts are ready where the path was obvious. Reputation flags are loaded. Press",
+    de: "Triagieren Sie von oben. Entwürfe sind bereit, wo der Weg klar war. Reputationsflags sind geladen. Drücken Sie",
+  },
+  "dash.lede.after_kbd": {
+    en: "to find anything across",
+    de: "um in",
+  },
+  "dash.lede.buildings_suffix": {
+    en: "buildings.",
+    de: "Gebäuden zu suchen.",
+  },
+
+  "dash.kpi.open_recs":       { en: "Open recommendations", de: "Offene Empfehlungen" },
+  "dash.kpi.critical":        { en: "Critical",             de: "Kritisch" },
+  "dash.kpi.drafts":          { en: "Drafts ready to send", de: "Entwürfe versandbereit" },
+  "dash.kpi.streams":         { en: "Streams in flight",    de: "Aktive Vorgänge" },
+  "dash.kpi.resolved":        { en: "Resolved today",       de: "Heute erledigt" },
+  "dash.kpi.queue":           { en: "Open queue",           de: "Offene Warteschlange" },
+
+  "dash.kpi.crit_below_critical": { en: "{n} critical · {m} below",     de: "{n} kritisch · {m} darunter" },
+  "dash.kpi.respond_today":       { en: "respond today",                  de: "heute beantworten" },
+  "dash.kpi.all_clear":            { en: "all clear",                      de: "alles klar" },
+  "dash.kpi.needs_draft":          { en: "needs draft",                    de: "Entwurf nötig" },
+  "dash.kpi.last_24h":              { en: "last 24h",                        de: "letzte 24 Std." },
+  "dash.kpi.pace_target":           { en: "pace · target",                   de: "Tempo · Ziel" },
+  "dash.kpi.prioritized":           { en: "prioritized",                     de: "priorisiert" },
+  "dash.kpi.review_under_30s":      { en: "review under 30s",                de: "in 30 Sek. prüfen" },
+
+  "dash.section.today":      { en: "Today",                de: "Heute" },
+  "dash.section.today.sub":  { en: "{n} threads need a decision", de: "{n} Vorgänge benötigen eine Entscheidung" },
+  "dash.section.view_all":   { en: "View all in Inbox →", de: "Alle im Posteingang →" },
+  "dash.section.in_flight":  { en: "In flight",           de: "In Bearbeitung" },
+  "dash.section.in_flight.sub": { en: "last 24h",         de: "letzte 24 Std." },
+  "dash.section.activity":   { en: "Latest activity",     de: "Neueste Aktivität" },
+  "dash.section.activity.sub": { en: "last 10 actions",   de: "letzte 10 Aktionen" },
+  "dash.section.refresh":    { en: "auto-refresh 30s",    de: "auto-aktualisierung 30s" },
+  "dash.section.open_audit": { en: "Open audit →",        de: "Audit öffnen →" },
+  "dash.section.empty":      { en: "Nothing pending — quiet day.", de: "Nichts offen — ruhiger Tag." },
+  "dash.section.no_streams": { en: "No active streams in the last 24 hours.",
+                               de: "Keine aktiven Vorgänge in den letzten 24 Std." },
+
+  "dash.severity.critical": { en: "Critical · respond now", de: "Kritisch · sofort reagieren" },
+  "dash.severity.high":     { en: "High · today",            de: "Hoch · heute" },
+  "dash.severity.medium":   { en: "Medium · this week",      de: "Mittel · diese Woche" },
+  "dash.severity.low":      { en: "Low · backlog",           de: "Niedrig · Backlog" },
+
+  "dash.recrow.step":  { en: "Step {n} of {m}", de: "Schritt {n} von {m}" },
+  "dash.recrow.review":   { en: "Review",  de: "Prüfen" },
+  "dash.recrow.msg":   { en: "msg",   de: "Nachr." },
+  "dash.recrow.msgs":  { en: "msgs",  de: "Nachr." },
+
+  "dash.dock.ask":   { en: "Ask anything…", de: "Frag uns alles…" },
+  "audit.search.placeholder": {
+    en: "Search emails, sources, entities, or any payload text…",
+    de: "Suche nach E-Mails, Quellen, Entitäten oder Inhalten…",
+  },
+  "audit.view.flat": { en: "Flat", de: "Flach" },
+  "audit.view.stream": { en: "Per task", de: "Pro Vorgang" },
+  "audit.stream.steps": { en: "steps", de: "Schritte" },
+  "audit.stream.duration": { en: "since first action", de: "seit erstem Schritt" },
+  "audit.stream.latest": { en: "latest", de: "zuletzt" },
 
   "queue.title": { en: "Queue", de: "Warteschlange" },
   "queue.subtitle": {

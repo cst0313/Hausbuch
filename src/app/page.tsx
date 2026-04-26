@@ -2,28 +2,74 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { Nav } from "@/components/Nav";
 import { useLocale } from "@/components/LocaleProvider";
+import { UploadInspector } from "@/components/UploadInspector";
+import { WhyThisWins } from "@/components/WhyThisWins";
+
+type LiveStats = {
+  open: number;
+  critical: number;
+  drafts: number;
+  facts: number;
+  sources: number;
+  entities: number;
+  latestAction?: { actor: string; action: string; entity: string | null; ts: string };
+};
 
 export default function Home() {
   const { t } = useLocale();
   const titleLines = t("hero.title").split("\n");
+  const [stats, setStats] = useState<LiveStats | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        // /api/stats is a direct COUNT() pass — ~5 ms warm vs the full
+        // recommendation engine's 3-4 s cold pipeline. The home page only
+        // needs the four headline numbers, not ranked recs.
+        const data = await fetch("/api/stats").then((r) => r.json());
+        if (cancelled) return;
+        setStats({
+          open: data.open ?? 0,
+          critical: data.critical ?? 0,
+          drafts: data.drafts ?? 0,
+          facts: data.facts ?? 0,
+          sources: data.sources ?? 0,
+          entities: data.entities ?? 0,
+          latestAction: data.latestAction ?? undefined,
+        });
+      } catch {
+        /* ignore — keep nulls */
+      }
+    };
+    load();
+    const t = setInterval(load, 8_000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, []);
 
   return (
     <>
       <Nav />
 
       {/* Hero */}
-      <section className="max-w-5xl mx-auto px-6 pt-28 pb-32 fade-up">
+      <section className="max-w-5xl mx-auto px-6 pt-20 pb-16 fade-up">
         <p
-          className="text-[13px] font-mono uppercase tracking-wider mb-10"
+          className="text-[12px] font-mono uppercase tracking-wider mb-8"
           style={{ color: "var(--fg-dim)" }}
         >
           <span
-            className="inline-block w-1.5 h-1.5 rounded-full mr-2 align-middle"
+            className={stats ? "inline-block w-1.5 h-1.5 rounded-full mr-2 align-middle pulse" : "inline-block w-1.5 h-1.5 rounded-full mr-2 align-middle"}
             style={{ background: "var(--brand)" }}
           />
-          {t("hero.eyebrow")}
+          {stats
+            ? t("hero.eyebrow") + " · live"
+            : t("hero.eyebrow")}
         </p>
 
         <h1
@@ -54,94 +100,167 @@ export default function Home() {
         </h1>
 
         <p
-          className="mt-10 max-w-2xl text-[18px] leading-relaxed"
+          className="mt-8 max-w-2xl text-[17px] leading-relaxed"
           style={{ color: "var(--fg-muted)" }}
         >
           {t("hero.subtitle")}
         </p>
 
-        <div className="mt-12 flex flex-wrap items-center gap-3">
+        <div className="mt-10 flex flex-wrap items-center gap-3">
           <Link
-            href="/inbox"
+            href="/dashboard"
             className="inline-flex items-center px-5 h-11 rounded-md text-[14px] font-medium transition-all"
             style={{
-              background: "var(--fg)",
-              color: "var(--bg)",
+              background: "var(--brand)",
+              color: "white",
             }}
           >
-            {t("hero.cta")}
+            Open the dashboard
             <span className="ml-2">→</span>
           </Link>
           <Link
-            href="/context/berliner-str-42"
+            href="/sandbox"
             className="inline-flex items-center px-5 h-11 rounded-md text-[14px] font-medium transition-colors"
             style={{
               border: "1px solid var(--border-muted)",
               color: "var(--fg)",
             }}
           >
-            {t("hero.cta.secondary")}
+            Drop a document
+          </Link>
+          <Link
+            href="/research"
+            className="inline-flex items-center px-3 h-11 text-[13px] font-mono"
+            style={{ color: "var(--fg-dim)" }}
+          >
+            see the methods →
           </Link>
         </div>
+
+        {/* Live stat strip */}
+        <div
+          className="mt-14 grid grid-cols-2 md:grid-cols-4 gap-0"
+          style={{
+            borderTop: "1px solid var(--border)",
+            borderBottom: "1px solid var(--border)",
+          }}
+        >
+          <Stat label="Open recs" value={stats?.open} accent={stats ? stats.critical > 0 : false} />
+          <Stat label="Critical" value={stats?.critical} crit />
+          <Stat label="Drafts ready" value={stats?.drafts} />
+          <Stat label="Facts in store" value={stats?.facts || stats?.sources || stats?.entities ? (stats?.facts ?? stats?.sources ?? stats?.entities) : "—"} />
+        </div>
+
+        {stats?.latestAction && (
+          <div
+            className="mt-3 font-mono text-[11px] flex items-center gap-2"
+            style={{ color: "var(--fg-dim)" }}
+          >
+            <span className="inline-block w-1.5 h-1.5 rounded-full pulse" style={{ background: "var(--brand)" }} />
+            last system action ·{" "}
+            <span style={{ color: "var(--brand)" }}>{stats.latestAction.actor}</span>
+            {" · "}
+            <span>{stats.latestAction.action}</span>
+            {stats.latestAction.entity && (
+              <>
+                {" · "}
+                <span>{stats.latestAction.entity}</span>
+              </>
+            )}
+          </div>
+        )}
       </section>
 
-      {/* Workflows */}
-      <section
-        className="border-t"
-        style={{ borderColor: "var(--border)" }}
-      >
-        <div className="max-w-5xl mx-auto px-6 py-24 grid gap-16 md:grid-cols-3">
-          <Workflow
-            number="01"
-            titleKey="workflows.inbox.title"
-            bodyKey="workflows.inbox.body"
-            href="/inbox"
-          />
-          <Workflow
-            number="02"
-            titleKey="workflows.queue.title"
-            bodyKey="workflows.queue.body"
-            href="/queue"
-          />
-          <Workflow
-            number="03"
-            titleKey="workflows.replay.title"
-            bodyKey="workflows.replay.body"
-            href="/context/berliner-str-42"
-          />
+      {/* Why this wins — six interactive differentiators */}
+      <WhyThisWins />
+
+      {/* Watch it work — embedded inspector */}
+      <section className="border-t" style={{ borderColor: "var(--border)" }}>
+        <div className="max-w-5xl mx-auto px-6 py-20">
+          <div className="grid md:grid-cols-[280px_1fr] gap-10 items-start">
+            <div>
+              <p
+                className="text-[11px] font-mono uppercase tracking-wider mb-4"
+                style={{ color: "var(--fg-dim)" }}
+              >
+                / watch it work
+              </p>
+              <h2
+                className="font-display text-[28px] mb-4"
+                style={{ letterSpacing: "-0.02em", fontWeight: 500, lineHeight: 1.1 }}
+              >
+                Drop in any document.{" "}
+                <span className="italic" style={{ fontFamily: "var(--font-serif)", color: "var(--brand-tint)", fontWeight: 400 }}>
+                  See what we extract.
+                </span>
+              </h2>
+              <p className="text-[14px] leading-relaxed" style={{ color: "var(--fg-muted)" }}>
+                Email, scanned letter, photo of a meter reading. The same pipeline
+                that handles a property manager&apos;s mailbox runs here. Every fact
+                links to its <span className="font-mono" style={{ color: "var(--brand)" }}>Context.md</span>.
+              </p>
+            </div>
+            <UploadInspector />
+          </div>
         </div>
       </section>
 
-      {/* Proof */}
-      <section
-        className="border-t"
-        style={{ borderColor: "var(--border)" }}
-      >
-        <div className="max-w-3xl mx-auto px-6 py-32 text-center">
+      {/* Three workflows */}
+      <section className="border-t" style={{ borderColor: "var(--border)" }}>
+        <div className="max-w-5xl mx-auto px-6 py-20">
           <p
-            className="font-serif italic text-balance"
-            style={{
-              fontSize: "clamp(2rem, 4vw, 3rem)",
-              lineHeight: 1.15,
-              color: "var(--fg)",
-            }}
+            className="text-[11px] font-mono uppercase tracking-wider mb-8"
+            style={{ color: "var(--fg-dim)" }}
           >
-            {t("proof.title")}
+            / three things you can do today
           </p>
-          <p
-            className="mt-6 text-[15px]"
-            style={{ color: "var(--fg-muted)" }}
-          >
-            {t("proof.body")}
-          </p>
+          <div className="grid gap-12 md:grid-cols-3">
+            <Workflow
+              number="01"
+              title="Triage 50 buildings before coffee"
+              body="The dashboard groups every open issue by severity and surfaces the draft reply, ready to edit and send."
+              href="/dashboard"
+              cta="Open dashboard"
+            />
+            <Workflow
+              number="02"
+              title="Inspect the graph on demand"
+              body="Drop a file and watch entities + facts + citations land. Every edge traces back to a verbatim quote."
+              href="/sandbox"
+              cta="Try the inspector"
+            />
+            <Workflow
+              number="03"
+              title="Replay the last 12 months"
+              body="The fact store is bitemporal. Ask 'who lived in WE 32 in March?' and get the right answer for that exact date."
+              href="/context/weg:immanuelkirchstr-26"
+              cta="Open Context.md"
+            />
+          </div>
         </div>
       </section>
 
-      {/* Footer anchor — discreet research link */}
-      <footer
-        className="border-t"
-        style={{ borderColor: "var(--border)" }}
-      >
+      {/* Partner trust strip */}
+      <section className="border-t" style={{ borderColor: "var(--border)" }}>
+        <div className="max-w-5xl mx-auto px-6 py-12">
+          <p
+            className="text-[11px] font-mono uppercase tracking-wider mb-6"
+            style={{ color: "var(--fg-dim)" }}
+          >
+            / built with
+          </p>
+          <div className="flex flex-wrap gap-x-10 gap-y-3 text-[14px]" style={{ color: "var(--fg-muted)" }}>
+            <span><strong style={{ color: "var(--fg)" }}>Gemini 2.5 Flash</strong> · extraction + composition</span>
+            <span><strong style={{ color: "var(--fg)" }}>Tavily</strong> · live enrichment</span>
+            <span><strong style={{ color: "var(--fg)" }}>Cala</strong> · entity verification</span>
+            <span><strong style={{ color: "var(--fg)" }}>Gradium</strong> · voice ASR</span>
+            <span><strong style={{ color: "var(--fg)" }}>Aikido</strong> · security scan</span>
+          </div>
+        </div>
+      </section>
+
+      {/* Footer anchor */}
+      <footer className="border-t" style={{ borderColor: "var(--border)" }}>
         <div className="max-w-5xl mx-auto px-6 py-10 flex items-center justify-between text-[12px] font-mono">
           <span style={{ color: "var(--fg-dim)" }}>
             Hausbuch · built in Berlin · April 2026
@@ -153,12 +272,9 @@ export default function Home() {
             <Link href="/audit" className="hover:text-[color:var(--fg)] transition-colors">
               audit log
             </Link>
-            <a
-              href="https://github.com/jchang/hausbuch"
-              className="hover:text-[color:var(--fg)] transition-colors"
-            >
-              github
-            </a>
+            <Link href="/technical" className="hover:text-[color:var(--fg)] transition-colors">
+              docs
+            </Link>
           </div>
         </div>
       </footer>
@@ -166,18 +282,69 @@ export default function Home() {
   );
 }
 
+function Stat({
+  label,
+  value,
+  accent,
+  crit,
+}: {
+  label: string;
+  value?: number | string;
+  accent?: boolean;
+  crit?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        padding: "20px 24px 20px 0",
+        borderRight: "1px solid var(--border-muted)",
+      }}
+    >
+      <div
+        className="font-mono"
+        style={{
+          textTransform: "uppercase",
+          letterSpacing: "0.06em",
+          fontSize: 10.5,
+          color: "var(--fg-dim)",
+          marginBottom: 6,
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontSize: 30,
+          fontWeight: 500,
+          letterSpacing: "-0.02em",
+          color: crit && typeof value === "number" && value > 0
+            ? "var(--severity-critical)"
+            : accent
+              ? "var(--brand)"
+              : "var(--fg)",
+          fontFeatureSettings: '"tnum"',
+          lineHeight: 1,
+        }}
+      >
+        {value === undefined ? <span style={{ color: "var(--fg-dim)" }}>·</span> : value}
+      </div>
+    </div>
+  );
+}
+
 function Workflow({
   number,
-  titleKey,
-  bodyKey,
+  title,
+  body,
   href,
+  cta,
 }: {
   number: string;
-  titleKey: string;
-  bodyKey: string;
+  title: string;
+  body: string;
   href: string;
+  cta: string;
 }) {
-  const { t } = useLocale();
   return (
     <Link href={href} className="group block">
       <p
@@ -187,24 +354,22 @@ function Workflow({
         {number}
       </p>
       <h3
-        className="text-[20px] font-semibold tracking-tight mb-3"
+        className="text-[20px] font-medium tracking-tight mb-3"
         style={{ color: "var(--fg)", letterSpacing: "-0.01em" }}
       >
-        {t(titleKey)}
+        {title}
       </h3>
       <p
-        className="text-[14px] leading-relaxed"
+        className="text-[14px] leading-relaxed mb-5"
         style={{ color: "var(--fg-muted)" }}
       >
-        {t(bodyKey)}
+        {body}
       </p>
       <span
-        className="inline-flex items-center mt-5 text-[12px] font-mono transition-colors"
-        style={{ color: "var(--fg-dim)" }}
+        className="inline-flex items-center text-[12px] font-mono transition-colors"
+        style={{ color: "var(--brand)" }}
       >
-        <span className="group-hover:text-[color:var(--brand-tint)] transition-colors">
-          open
-        </span>
+        <span>{cta}</span>
         <span className="ml-1 group-hover:translate-x-0.5 transition-transform">→</span>
       </span>
     </Link>

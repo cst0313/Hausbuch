@@ -35,8 +35,28 @@ export async function POST(req: NextRequest) {
       : await runAgent(input);
     return NextResponse.json(result);
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // Gemini free-tier quota exhaustion — return a useful response instead of 500
+    // so the UI keeps working. Surface the limit honestly.
+    if (msg.includes("429") || msg.toLowerCase().includes("quota") || msg.toLowerCase().includes("resource_exhausted")) {
+      return NextResponse.json({
+        answer:
+          "The agent's daily LLM quota is exhausted (Gemini free tier). Search results below " +
+          "still work — they don't need an LLM. Bump the project to a paid quota or wait until " +
+          "the quota resets to ask follow-up questions.",
+        citations: [],
+        steps: [
+          { type: "thinking", content: "Quota exhausted — falling back without LLM call.", ts: new Date().toISOString() },
+        ],
+        suggestions: [],
+        entities_accessed: [],
+        facts_used: 0,
+        model: "quota-exhausted",
+        latency_ms: 0,
+      });
+    }
     return NextResponse.json(
-      { error: `Agent failed: ${err instanceof Error ? err.message : String(err)}` },
+      { error: `Agent failed: ${msg}` },
       { status: 500 },
     );
   }

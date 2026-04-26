@@ -234,7 +234,7 @@ export function ragBaselineAnswer(question: string): {
  *    structured reconciler.
  *
  * This produces plausible, measurably-wrong answers — the exact failure mode
- * the Qontext track is complaining about.
+ * a structured context engine is meant to eliminate.
  */
 export function longContextBaselineAnswer(question: string): {
   answer: string;

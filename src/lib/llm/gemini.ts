@@ -162,6 +162,7 @@ function redact(s: string): string {
 type GeminiUsage = {
   promptTokenCount?: number;
   candidatesTokenCount?: number;
+  thoughtsTokenCount?: number;
   totalTokenCount?: number;
 };
 
@@ -210,11 +211,16 @@ export async function compose(input: ComposeInput): Promise<ComposeOutput> {
   }
   contents.push({ role: "user", parts: [{ text: input.prompt }] });
 
+  // gemini-2.5-flash uses thinking tokens by default; those count toward
+  // maxOutputTokens, so the visible answer was being clipped at ~80 tokens.
+  // Disable thinking for compose — these are deterministic prose answers
+  // that don't benefit from a thinking budget.
   const body = {
     contents,
     generationConfig: {
       temperature: 0.2,
       maxOutputTokens: 1024,
+      thinkingConfig: { thinkingBudget: 0 },
     },
   };
 

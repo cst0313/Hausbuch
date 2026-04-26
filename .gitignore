@@ -57,3 +57,9 @@ hackathon_description.md
 
 # MCP config may contain API keys — use .mcp.json.example for structure
 .mcp.json
+
+# IDE / Claude
+.claude/
+
+# Hackathon archives (data extracted into tmp/hackathon/)
+hackathon-*.zip

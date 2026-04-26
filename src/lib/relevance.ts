@@ -16,6 +16,7 @@
  */
 
 import type { Source } from "./types";
+import { getEntity, getAllFactsForEntity } from "./db";
 
 export type RelevanceDecision = {
   accept: boolean;
@@ -139,13 +140,62 @@ export function judgeRelevance(
  * ──────────────────────────────────────────────────────────────────────── */
 
 function tokensFromEntity(entity: string): string[] {
-  // "property:berliner-str-42" → ["berliner", "str", "42", "berliner str", "berliner-str-42"]
-  const parts = entity.split(":");
-  const tail = parts[parts.length - 1];
-  const words = tail.split(/[-_]/).filter((w) => w.length > 1);
-  const combined = words.join(" ");
-  const full = tail.replace(/-/g, " ");
-  return Array.from(new Set([...words, combined, full].filter(Boolean)));
+  // Entity IDs are often opaque slugs ("contractor:DL-010") that never appear
+  // in document text. The relevance signal comes from the human name + key
+  // identity facts (firma, email) — those are what actual letters / invoices
+  // reference. Fall back to the slug only when nothing better is available.
+  const out = new Set<string>();
+
+  const ent = (() => { try { return getEntity(entity); } catch { return null; } })();
+  if (ent?.name) {
+    const cleaned = ent.name.toLowerCase().trim();
+    out.add(cleaned);
+    // Salutations like "Frau " / "Herr " shouldn't anchor relevance — strip them
+    // so the token is the actual person/firma name.
+    const stripped = cleaned.replace(/^\s*(frau|herr|firma|kanzlei)\s+/i, "");
+    if (stripped !== cleaned) out.add(stripped);
+    // Individual words ≥ 4 chars are useful for partial matches.
+    for (const w of stripped.split(/[\s.,&-]+/)) {
+      if (w.length >= 4) out.add(w);
+    }
+  }
+
+  // Pull identity facts — firma / email / address localpart all show up in
+  // documents about the entity.
+  try {
+    const facts = getAllFactsForEntity(entity).filter((f) => f.known_to === null);
+    for (const f of facts) {
+      if (
+        f.predicate === "identity.firma" ||
+        f.predicate === "identity.name" ||
+        f.predicate === "identity.email"
+      ) {
+        const v = String(f.value ?? "").toLowerCase().trim();
+        if (!v) continue;
+        if (f.predicate === "identity.email") {
+          // Just the local part — recipients often write "max@example.com" but
+          // body text rarely repeats the address verbatim.
+          const local = v.split("@")[0];
+          if (local && local.length >= 4) out.add(local);
+        } else {
+          out.add(v);
+          for (const w of v.split(/[\s.,&-]+/)) {
+            if (w.length >= 4) out.add(w);
+          }
+        }
+      }
+    }
+  } catch {
+    /* ignore — entity might be transient */
+  }
+
+  // Slug fallback if we got nothing else.
+  if (out.size === 0) {
+    const tail = entity.split(":").pop() ?? entity;
+    for (const w of tail.split(/[-_]/)) if (w.length > 1) out.add(w);
+  }
+
+  return Array.from(out);
 }
 
 function detectConflictingAddress(text: string, entityTokens: string[]): string | null {

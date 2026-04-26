@@ -7,37 +7,58 @@
    ─────────────────────────────────────────────────────────── */
 
 :root {
-  /* Dark theme (product default) */
-  --bg: #010105;
-  --bg-elevated: #171717;
-  --bg-hover: #292524;
+  /* Light theme — warm-paper palette from Dashboard.html design canvas. */
+  --bg: #f6f4ef;             /* warm stone, paper-like */
+  --bg-elevated: #ffffff;
+  --bg-hover: #efece5;
+  --bg-sunk: #ecebe5;
 
-  --fg: #fafaf9;
-  --fg-muted: #a8a29e;
-  --fg-dim: #78716c;
+  --fg: #1c1a16;
+  --fg-muted: #57544c;
+  --fg-dim: #8a8579;
 
-  --border: #292524;
-  --border-muted: #44403c;
+  --border: #d9d4c7;
+  --border-muted: #e7e3d7;
+  --border-strong: #b8b1a0;
 
-  /* Higher-contrast muted ramps for navigation and small text on dark bg.
-     WCAG AA requires 4.5:1 for body text; --fg-muted (#a8a29e on #010105)
-     lands at 3.2:1 which fails. These hit ~6:1. */
-  --nav-fg: #d6d3d1;       /* stone-300 — 6.2:1 on --bg */
-  --nav-fg-dim: #a8a29e;   /* stone-400 — 3.2:1, only for metadata chips */
+  --nav-fg: #57544c;
+  --nav-fg-dim: #8a8579;
 
-  /* Brand accents (cross-theme) */
+  /* Brand */
   --brand: #0d7835;
-  --brand-hover: #0d7835e5;
-  --brand-tint: #398957;
-  --brand-wash: #0d542b33;
+  --brand-ink: #084821;
+  --brand-soft: #e6efe7;
+  --brand-hover: #0a6129;
+  --brand-tint: #0d7835;
+  --brand-wash: rgba(13, 120, 53, 0.08);
+  --brand-line: rgba(13, 120, 53, 0.22);
+
+  /* Severity ramps — ink + soft fill for grouped headers */
+  --severity-critical: #991b1b;
+  --severity-critical-soft: #f4e3e1;
+  --severity-high: #b45309;
+  --severity-high-soft: #f5e8d4;
+  --severity-medium: #0c4a6e;
+  --severity-medium-soft: #dfe8ee;
+  --severity-low: #57544c;
+  --severity-low-soft: #ecebe5;
+
+  --rep-trusted: #0d7835;
+  --rep-neutral: #b45309;
+  --rep-avoid: #991b1b;
+
   --accent-sand: #cdbda3;
   --accent-sage: #d6dbd5;
 
-  /* Semantic */
+  /* Semantic — design names alias the severity ramp */
+  --critical: var(--severity-critical);
+  --high: var(--severity-high);
+  --info: var(--severity-medium);
+  --critical-wash: var(--severity-critical-soft);
+  --high-wash: var(--severity-high-soft);
   --success: #0d7835;
   --warning: #b45309;
   --danger: #991b1b;
-  --info: #0c4a6e;
 
   /* Stone ramp */
   --stone-50:  #fafaf9;
@@ -65,17 +86,22 @@
   --line-bright: rgba(250, 250, 249, 0.18);
 }
 
-[data-theme="light"] {
-  --bg: #ffffff;
-  --bg-elevated: #fafaf9;
-  --bg-hover: #e7e5e4;
+[data-theme="dark"] {
+  --bg: #010105;
+  --bg-elevated: #171717;
+  --bg-hover: #292524;
 
-  --fg: #1c1917;
-  --fg-muted: #57534e;
+  --fg: #fafaf9;
+  --fg-muted: #a8a29e;
   --fg-dim: #78716c;
 
-  --border: #f5f5f4;
-  --border-muted: #e7e5e4;
+  --border: #292524;
+  --border-muted: #44403c;
+
+  --nav-fg: #d6d3d1;
+  --nav-fg-dim: #a8a29e;
+
+  --brand-wash: #0d542b33;
 }
 
 @theme inline {
@@ -219,3 +245,39 @@ body {
   height: 1px;
   background: linear-gradient(90deg, transparent, var(--border-muted), transparent);
 }
+
+/* ───────────────────────────────────────────────────────────
+   Design-canvas primitives — added 2026-04-25 to match the
+   Hausbuch.html dashboard surface.
+   ─────────────────────────────────────────────────────────── */
+
+.mono { font-family: var(--font-mono); font-feature-settings: "tnum"; }
+.serif-italic { font-family: var(--font-serif); font-style: italic; font-weight: 400; }
+
+.kbd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--fg-muted);
+}
+
+.dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  vertical-align: middle;
+}
+
+@keyframes caretBlink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
+.caret { animation: caretBlink 1s step-end infinite; }
+
+@keyframes softPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+.pulse { animation: softPulse 2.2s ease-in-out infinite; }
+
+.diff-add { background: rgba(13, 120, 53, 0.12); color: var(--brand); }
+.diff-rm  { background: rgba(153, 27, 27, 0.07); color: var(--critical); text-decoration: line-through; opacity: 0.7; }
+.diff-sup { background: rgba(180, 83, 9, 0.07); color: var(--high); }

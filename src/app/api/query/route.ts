@@ -220,7 +220,7 @@ async function anthropicAttempt(args: AttemptArgs): Promise<NextResponse> {
     const systemText = personaSystem(args.persona);
     const msg = await client.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 512,
+      max_tokens: 1024,
       system: [
         { type: "text", text: systemText, cache_control: { type: "ephemeral" } },
         { type: "text", text: args.contextMd, cache_control: { type: "ephemeral" } },
@@ -320,27 +320,63 @@ function estimateLongContextTokens(): number {
 }
 
 function personaSystem(persona: Persona): string {
-  const base =
-    "You read a bitemporal Context.md and answer grounded questions about a single entity. " +
-    "Always cite the source file after each non-trivial claim in the form `(source.pdf)` or `(source.pdf p.3)`. " +
-    "Never invent facts not present in the document. If a predicate is contested, surface both values, " +
-    "explain the posterior in plain language, and recommend which to treat as operative.";
+  const grounding =
+    "You are answering questions about a single property entity using a bitemporal Context.md. " +
+    "Use ONLY the document above — do not invent. Be specific: when the document mentions a " +
+    "tenant, owner, contractor, or unit (e.g. 'WE 32', 'Frau Mitschke', 'Sanitaer Schulze'), " +
+    "name them explicitly. Generic phrases like 'a tenant' or 'the issue' are forbidden when " +
+    "the document gives you the concrete answer.";
+
   if (persona === "drafter") {
+    // Recipient-facing email — NO internal leaks. The model should demonstrate
+    // it read the context by citing concrete tenant-visible details (unit
+    // number, complaint type, dates), but never reference Context.md, raw
+    // entity IDs, posteriors, citations, or anything an external recipient
+    // wouldn't expect in a normal property-management email.
     return (
-      base +
-      "\n\nReply as an English-speaking property-management professional drafting a short formal email. " +
-      "Use a 'Dear Mr./Ms. <surname>,' salutation, 2–4 sentences of body, and sign off as " +
-      "'Kind regards, Müller Immobilien GmbH'. Tone: warm, precise, statute-aware. Respond in English."
+      grounding +
+      "\n\nYou are drafting an outgoing email TO the recipient (a tenant or owner). " +
+      "Treat this as the actual email body that will be sent.\n\n" +
+      "RECENCY RULE — IMPORTANT: respond to the MOST RECENT inbound message in the document. " +
+      "Look at known_from / valid_from timestamps and source titles to identify the latest event. " +
+      "If a lawyer letter, escalation, or follow-up appears most recently, respond TO THAT — " +
+      "do not regress to an older complaint just because earlier issues had a higher posterior " +
+      "probability across history. The latest source dictates what to acknowledge first.\n\n" +
+      "STRICT OUTPUT RULES — these are recipient-visible:\n" +
+      "  • DO NOT cite sources. No '(Context.md)', no '(source.eml)', no '^[…]'.\n" +
+      "  • DO NOT include internal entity IDs (no 'EH-032', no 'tenant:MIE-016', no 'EIG-001'). " +
+      "Use the human-facing form only: 'WE 32', surnames, building numbers.\n" +
+      "  • DO NOT mention posteriors, probabilities, conflicts, or 'the document says'.\n" +
+      "  • DO NOT use placeholders like [Surname] or [Unit]. Use the real value.\n" +
+      "FORMAT:\n" +
+      "  Line 1: 'Dear Mr./Ms. <Surname>,' or, when a lawyer letter is the most recent event, " +
+      "address the law firm by name ('Dear Kanzlei <Name>,').\n" +
+      "  Body: 3-4 sentences. Acknowledge the SPECIFIC most-recent event (name the issue type and " +
+      "the unit, e.g. 'the water damage and heating failure raised in your letter of 15 January'), " +
+      "state what is being done, name the contractor being dispatched if applicable. Reference any " +
+      "relevant statute (e.g. Mietminderung, §535 BGB) by name where it adds reassurance.\n" +
+      "  Sign-off: 'Kind regards,\\nHuber & Partner Immobilienverwaltung'.\n" +
+      "Output a complete, sendable email with no internal-system leakage."
     );
   }
+
   if (persona === "chatbot") {
+    // Internal property-manager assistant — citations welcome, posteriors fine.
     return (
-      base +
-      "\n\nReply as a helpful AI leasing assistant in English. 2–4 sentences. Conversational, " +
-      "confident, never hand-wave. When uncertainty exists, make the tradeoff concrete."
+      grounding +
+      " If a predicate is contested, surface both values and the posterior probability, then " +
+      "recommend which to treat as operative. Cite sources inline as `(source-title)`.\n\n" +
+      "RECENCY: when prioritizing the 'most urgent open issue', favor the most recent source " +
+      "title and known_from timestamp. A lawyer escalation that arrived today outranks an older " +
+      "lock complaint, even if the lock complaint has a higher posterior across history. The " +
+      "freshness of the signal matters as much as its frequency.\n\n" +
+      "Format: 3-5 short sentences (or up to 5 bullet points). Lead with the most urgent " +
+      "concrete fact (a specific unit, person, or amount), then the recommended next step. " +
+      "Always name people and units. Avoid generic openers like 'The most urgent issue is'. " +
+      "Confident, conversational, never hand-wave."
     );
   }
-  return base + " Answer concisely, one or two sentences.";
+  return grounding + " Answer concisely, one or two sentences.";
 }
 
 function extractCitations(answer: string): string[] {

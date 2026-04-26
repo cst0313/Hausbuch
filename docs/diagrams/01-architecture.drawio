@@ -1,0 +1,159 @@
+<mxfile host="app.diagrams.net" modified="2026-04-25T00:00:00.000Z" agent="hausbuch" version="22.0.0">
+  <diagram id="arch" name="System Architecture">
+    <mxGraphModel dx="1422" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="Hausbuch — System Architecture" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=22;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="700" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Bitemporal property-management context engine" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=2" vertex="1" parent="1">
+          <mxGeometry x="40" y="60" width="700" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- ─── DATA SOURCES ─── -->
+        <mxCell id="sources-group" value="DATA SOURCES" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;verticalAlign=top;fontSize=11;fontStyle=1;startSize=24" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="280" height="540" as="geometry" />
+        </mxCell>
+        <mxCell id="src-stamm" value="Stammdaten (JSON+CSV)&#xa;1 WEG · 3 buildings · 52 units&#xa;35 owners · 26 tenants · 16 contractors" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10" vertex="1" parent="1">
+          <mxGeometry x="60" y="140" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="src-emails" value="Emails (.eml)&#xa;6,546 historical + 40 incremental&#xa;parseEmailHeaders + bodies" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10" vertex="1" parent="1">
+          <mxGeometry x="60" y="220" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="src-pdfs" value="Letters &amp; Invoices (PDF)&#xa;339 PDFs in briefe/ + rechnungen/&#xa;pre-extracted text" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10" vertex="1" parent="1">
+          <mxGeometry x="60" y="300" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="src-bank" value="Bank statements (CAMT.053+CSV)&#xa;1,619 transactions&#xa;referenz_id → entity routing" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10" vertex="1" parent="1">
+          <mxGeometry x="60" y="380" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="src-voice" value="Voice (Gradium ASR)&#xa;24kHz PCM · 80ms chunks&#xa;transcribed → /api/agent" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10" vertex="1" parent="1">
+          <mxGeometry x="60" y="460" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="src-upload" value="Drop-in inspector (UI)&#xa;arbitrary files via /api/upload" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10" vertex="1" parent="1">
+          <mxGeometry x="60" y="540" width="240" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ─── INGESTION ─── -->
+        <mxCell id="ingest-group" value="INGESTION &amp; EXTRACTION" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;verticalAlign=top;fontSize=11;fontStyle=1;startSize=24" vertex="1" parent="1">
+          <mxGeometry x="380" y="100" width="320" height="540" as="geometry" />
+        </mxCell>
+        <mxCell id="ing-keyword" value="Keyword scorer (regex patterns)&#xa;water_damage / mold / heating /&#xa;lock / elevator / noise — multi-match&#xa;scoring with subject-priority" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10" vertex="1" parent="1">
+          <mxGeometry x="400" y="140" width="280" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="ing-llmfallback" value="LLM fallback classifier (Gemini 2.5 Flash)&#xa;Fires when category=Schaden/Mangel&#xa;but keyword score=0&#xa;src/lib/classify.ts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10" vertex="1" parent="1">
+          <mxGeometry x="400" y="240" width="280" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="ing-gemini" value="Gemini extractor (PDFs)&#xa;recipient.name + invoice.vendor&#xa;→ used to ROUTE to entity" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10" vertex="1" parent="1">
+          <mxGeometry x="400" y="340" width="280" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="ing-cala" value="Cala — entity verification&#xa;match contractor to canonical record" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10" vertex="1" parent="1">
+          <mxGeometry x="400" y="420" width="280" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="ing-tavily" value="Tavily — live web enrichment&#xa;contractor reputation, regulations" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10" vertex="1" parent="1">
+          <mxGeometry x="400" y="490" width="280" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="ing-aikido" value="Aikido — security scan on inbound files" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10" vertex="1" parent="1">
+          <mxGeometry x="400" y="560" width="280" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ─── FACT STORE ─── -->
+        <mxCell id="fact-group" value="BITEMPORAL FACT STORE (SQLite)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;verticalAlign=top;fontSize=11;fontStyle=1;startSize=24" vertex="1" parent="1">
+          <mxGeometry x="760" y="100" width="320" height="290" as="geometry" />
+        </mxCell>
+        <mxCell id="fact-entities" value="entities&#xa;weg / building / unit / owner / tenant /&#xa;contractor — hierarchical parent_id" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10" vertex="1" parent="1">
+          <mxGeometry x="780" y="140" width="280" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="fact-facts" value="facts (append-only)&#xa;(entity, predicate, value, valid_from,&#xa;valid_to, known_from, source, span,&#xa;confidence, superseded_by)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10" vertex="1" parent="1">
+          <mxGeometry x="780" y="220" width="280" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="fact-sources" value="sources&#xa;email / letter / invoice / bank /&#xa;stammdaten — direction + thread_id" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10" vertex="1" parent="1">
+          <mxGeometry x="780" y="320" width="280" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ─── RECONCILIATION + RECS ─── -->
+        <mxCell id="rec-group" value="RECONCILIATION &amp; RECOMMENDATIONS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;fontSize=11;fontStyle=1;startSize=24" vertex="1" parent="1">
+          <mxGeometry x="760" y="420" width="320" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="rec-ds" value="Dawid–Skene reconciliation&#xa;source-prior × recency weighting&#xa;resolves conflicting facts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10" vertex="1" parent="1">
+          <mxGeometry x="780" y="460" width="280" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="rec-engine" value="Recommendation engine&#xa;buildIncidentRecommendation /&#xa;buildLegalRecommendation /&#xa;awaiting-reply detector" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10" vertex="1" parent="1">
+          <mxGeometry x="780" y="540" width="280" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- ─── UI / API ─── -->
+        <mxCell id="ui-group" value="UI &amp; API SURFACE" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;verticalAlign=top;fontSize=11;fontStyle=1;startSize=24" vertex="1" parent="1">
+          <mxGeometry x="1140" y="100" width="280" height="540" as="geometry" />
+        </mxCell>
+        <mxCell id="ui-dash" value="/dashboard&#xa;triage view: severity-grouped recs,&#xa;collapsed rows for awaiting-reply" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10" vertex="1" parent="1">
+          <mxGeometry x="1160" y="140" width="240" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="ui-cmdk" value="CmdK Agent (palette ⌘K)&#xa;NL queries → /api/agent&#xa;3-deep query history" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10" vertex="1" parent="1">
+          <mxGeometry x="1160" y="225" width="240" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="ui-context" value="/context/[entity]&#xa;rendered Markdown with anchored&#xa;fact blocks &amp; verbatim citations" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10" vertex="1" parent="1">
+          <mxGeometry x="1160" y="305" width="240" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="ui-sandbox" value="/sandbox&#xa;upload inspector — drop a doc,&#xa;watch entities + facts land" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10" vertex="1" parent="1">
+          <mxGeometry x="1160" y="385" width="240" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="ui-audit" value="/audit&#xa;append-only action log&#xa;(every LLM call, every fact write)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10" vertex="1" parent="1">
+          <mxGeometry x="1160" y="465" width="240" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="ui-stats" value="/api/stats · /api/recommendations&#xa;polled every 8s by home + dashboard" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10" vertex="1" parent="1">
+          <mxGeometry x="1160" y="545" width="240" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- ─── EDGES ─── -->
+        <mxCell id="e1" style="endArrow=classic;html=1;strokeColor=#666666" edge="1" parent="1" source="src-stamm" target="ingest-group">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" style="endArrow=classic;html=1;strokeColor=#666666" edge="1" parent="1" source="src-emails" target="ingest-group">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" style="endArrow=classic;html=1;strokeColor=#666666" edge="1" parent="1" source="src-pdfs" target="ingest-group">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" style="endArrow=classic;html=1;strokeColor=#666666" edge="1" parent="1" source="src-bank" target="ingest-group">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" style="endArrow=classic;html=1;strokeColor=#666666" edge="1" parent="1" source="src-voice" target="ingest-group">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" style="endArrow=classic;html=1;strokeColor=#666666" edge="1" parent="1" source="src-upload" target="ingest-group">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e10" style="endArrow=classic;html=1;strokeColor=#666666" edge="1" parent="1" source="ingest-group" target="fact-facts">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e20" style="endArrow=classic;html=1;strokeColor=#666666" edge="1" parent="1" source="fact-facts" target="rec-ds">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e21" style="endArrow=classic;html=1;strokeColor=#666666" edge="1" parent="1" source="rec-ds" target="rec-engine">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e30" style="endArrow=classic;html=1;strokeColor=#666666" edge="1" parent="1" source="rec-engine" target="ui-dash">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e31" style="endArrow=classic;html=1;strokeColor=#666666" edge="1" parent="1" source="fact-facts" target="ui-context">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e32" style="endArrow=classic;html=1;strokeColor=#666666" edge="1" parent="1" source="fact-facts" target="ui-cmdk">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- legend -->
+        <mxCell id="legend" value="Legend: blue=external data · yellow=processing · purple=storage · green=reasoning · red=user surface" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;fontStyle=2" vertex="1" parent="1">
+          <mxGeometry x="40" y="660" width="1380" height="20" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

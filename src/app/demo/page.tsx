@@ -12,21 +12,21 @@ export default function DemoPage() {
         <section className="max-w-7xl mx-auto px-6 pt-14 pb-6">
           <div
             className="text-[11px] font-mono tracking-widest uppercase mb-4"
-            style={{ color: "var(--ink-dim)" }}
+            style={{ color: "var(--fg-dim)" }}
           >
             / demo
           </div>
           <h1
-            className="font-serif leading-[1.0] tracking-tight mb-4"
-            style={{ fontSize: "clamp(2rem, 4vw, 3rem)" }}
+            className="font-display tracking-tight mb-4"
+            style={{ fontSize: "clamp(1.8rem, 4vw, 2.5rem)", lineHeight: 1.1, letterSpacing: "-0.03em", fontWeight: 500 }}
           >
-            Two agents. <span className="italic" style={{ color: "var(--amber-bright)" }}>One living document.</span>
+            Two agents. <span className="italic font-serif" style={{ color: "var(--brand)" }}>One living document.</span>
           </h1>
           <p
             className="max-w-2xl text-[14px] leading-relaxed"
-            style={{ color: "var(--ink-muted)" }}
+            style={{ color: "var(--fg-muted)" }}
           >
-            Each stage is a real <code className="font-mono" style={{ color: "var(--ink)" }}>POST /api/ingest</code>.
+            Each stage is a real <code className="font-mono" style={{ color: "var(--fg)" }}>POST /api/ingest</code>.
             The DB grows. The document rewrites itself. Both agents re-query and stay coherent.
           </p>
         </section>
@@ -39,8 +39,8 @@ export default function DemoPage() {
           <div className="hr-line mb-8" />
           <div className="flex justify-between items-center">
             <HausbuchMark size={14} />
-            <div className="text-[11px] font-mono" style={{ color: "var(--ink-dim)" }}>
-              <a href="/research" className="hover:text-amber-bright transition-colors">
+            <div className="text-[11px] font-mono" style={{ color: "var(--fg-dim)" }}>
+              <a href="/research" className="hover:opacity-80 transition-opacity" style={{ color: "var(--brand)" }}>
                 see the ablation study →
               </a>
             </div>

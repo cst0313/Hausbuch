@@ -17,6 +17,8 @@ import { normalizePredicate } from "./normalize";
 import { judgeRelevance, type RelevanceDecision } from "./relevance";
 import { runEnrichments } from "./enrich";
 import { recordAction } from "./actions";
+import { recordIdentityMatch, type ResolvedIdentity } from "./identity";
+import { invalidateRecommendationsCache } from "./recommendations";
 
 export type IngestInput = {
   entity: string;
@@ -25,7 +27,10 @@ export type IngestInput = {
     title: string;
     raw_excerpt: string;
     source_prior?: number;
+    from_addr?: string;
   };
+  /** Origin (protocol+host) used for context prefetch URLs. Optional. */
+  origin?: string;
 };
 
 export type IngestResult = {
@@ -36,6 +41,7 @@ export type IngestResult = {
   conflicts: Array<{ predicate: string; posterior: { value: string; probability: number }[] }>;
   normalized: Array<{ raw: string; canonical: string }>; // schema-alignment evidence
   relevance: RelevanceDecision;                          // signal/noise decision
+  identity?: ResolvedIdentity | null;                    // sender match (if from_addr present)
   latency_ms: number;
 };
 
@@ -50,9 +56,22 @@ export async function ingest(input: IngestInput): Promise<IngestResult> {
     ingested_at: now,
     raw_excerpt: input.source.raw_excerpt,
     source_prior: input.source.source_prior ?? 0.8,
+    from_addr: input.source.from_addr,
+    entity_id: input.entity,
   };
   insertSource(source);
   emitEvent({ kind: "source.ingested", source_id: source.id, title: source.title });
+
+  // ── Identity resolution (sender prefetch) ────────────────────────────
+  // If the source carries a sender email, resolve it to an entity, log the
+  // match, and pre-warm the related Context.md files. Fails closed: a missed
+  // match is just a no-op.
+  const identity = recordIdentityMatch({
+    source_id: source.id,
+    entity: input.entity,
+    from_addr: input.source.from_addr ?? null,
+    origin: input.origin,
+  });
 
   const extracted = await extract(input.entity, source);
   emitEvent({ kind: "extractor.completed", source_id: source.id, fact_count: extracted.length });
@@ -84,6 +103,7 @@ export async function ingest(input: IngestInput): Promise<IngestResult> {
       conflicts: [],
       normalized: [],
       relevance,
+      identity,
       latency_ms,
     };
   }
@@ -191,6 +211,9 @@ export async function ingest(input: IngestInput): Promise<IngestResult> {
   const latency_ms = Math.round(performance.now() - t0);
   emitEvent({ kind: "render.completed", entity: input.entity, fact_count: writtenFacts.length, latency_ms });
 
+  // Bust the recommendations cache so the next dashboard/palette read sees this ingest.
+  if (writtenFacts.length > 0) invalidateRecommendationsCache();
+
   recordAction({
     actor: "ingest",
     action: "source.ingest",
@@ -209,6 +232,7 @@ export async function ingest(input: IngestInput): Promise<IngestResult> {
     conflicts: conflictsOut,
     normalized: normalizationLog,
     relevance,
+    identity,
     latency_ms,
   };
 }

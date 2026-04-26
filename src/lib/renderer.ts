@@ -1,6 +1,7 @@
 // path: src/lib/renderer.ts
 import type { Detail, Fact, PredicateView, RenderOptions } from "./types";
-import { getSource } from "./db";
+import { listRecentSourcesForEntity } from "./db";
+import { getSource, countCorroborations } from "./db";
 import { fullView } from "./query";
 
 /**
@@ -135,6 +136,23 @@ export function render(entity: string, opts: RenderOptions = {}): string {
     }
   }
 
+  // Recent activity — last 5 sources ingested for this entity, newest first.
+  // Surfaces sources even when extraction produced no facts (e.g., a lawyer
+  // letter that didn't match an extractor pattern but is the most-recent event).
+  const recent = listRecentSourcesForEntity(entity, 5);
+  if (recent.length > 0) {
+    lines.push(`## Recent activity`);
+    for (const s of recent) {
+      const when = s.ingested_at.slice(0, 10);
+      const kind = s.kind;
+      const excerpt = s.raw_excerpt.replace(/\s+/g, " ").slice(0, 140);
+      const ellipsis = s.raw_excerpt.length > 140 ? "…" : "";
+      lines.push(`- ${when} · ${kind} · ${s.title}`);
+      lines.push(`    "${excerpt}${ellipsis}"`);
+    }
+    lines.push("");
+  }
+
   // Trailer (stable suffix)
   const allViews = [...Object.values(view), ...Object.values(upcoming)];
   const factCount = allViews.reduce(
@@ -182,7 +200,7 @@ function conflictBlock(predicate: string, v: Extract<PredicateView, { kind: "con
   const poss = v.posterior.entries
     .map((e) => `P(${formatPosteriorValue(e.value, v.facts[0])})=${e.probability.toFixed(2)}`)
     .join(" · ");
-  block.push(`  posterior: ${poss} · via Dawid-Skene (1979)`);
+  block.push(`  posterior: ${poss}`);
   block.push(`<!-- /conflict:${key} -->`);
   return block;
 }
@@ -192,6 +210,23 @@ function renderFactLine(key: string, fact: Fact, detail: Detail): string {
   const cite = src?.title ?? fact.source;
   const pad = key.padEnd(KEY_PAD, " ");
   const confMarker = detail >= 5 ? ` (c=${fact.confidence.toFixed(2)})` : "";
+
+  // Multi-source corroboration: show how many distinct sources have asserted
+  // this exact (entity, predicate, value) triple. When a single source asserts
+  // the fact, the line stays unchanged. When several do, the user/agent can
+  // see at a glance that the claim is independently corroborated.
+  const corro = countCorroborations(fact.entity, fact.predicate, String(fact.value));
+  if (corro.count > 1) {
+    const others = corro.sources
+      .filter((s) => s.id !== fact.source)
+      .slice(0, 3)
+      .map((s) => s.title)
+      .join("; ");
+    const tail = others
+      ? `  ^[${cite}] · × ${corro.count} sources (also: ${others}${corro.count > 4 ? ", …" : ""})`
+      : `  ^[${cite}] · × ${corro.count} sources`;
+    return `${pad}${formatValue(fact)}${confMarker}${tail}`;
+  }
   return `${pad}${formatValue(fact)}${confMarker}  ^[${cite}]`;
 }
 

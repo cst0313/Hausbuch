@@ -22,6 +22,7 @@ export type ActionActor =
   | "reconciler"
   | "gemini"
   | "tavily"
+  | "cala"
   | "gradium"
   | "aikido"
   | "system";
@@ -179,10 +180,13 @@ export type ListActionsOpts = {
   entity?: string;
   actor?: string;
   action?: string;
+  target?: string;
   since?: string;
   until?: string;
   limit?: number;
   offset?: number;
+  /** Free-text search — matches entity, target, action, or substring of input/output. */
+  q?: string;
 };
 
 export function listActions(opts: ListActionsOpts = {}): ActionRecord[] {
@@ -203,6 +207,10 @@ export function listActions(opts: ListActionsOpts = {}): ActionRecord[] {
     clauses.push("action = @action");
     args.action = opts.action;
   }
+  if (opts.target) {
+    clauses.push("target = @target");
+    args.target = opts.target;
+  }
   if (opts.since) {
     clauses.push("ts >= @since");
     args.since = opts.since;
@@ -210,6 +218,13 @@ export function listActions(opts: ListActionsOpts = {}): ActionRecord[] {
   if (opts.until) {
     clauses.push("ts <= @until");
     args.until = opts.until;
+  }
+  if (opts.q && opts.q.trim()) {
+    const pattern = `%${opts.q.trim()}%`;
+    clauses.push(
+      "(entity LIKE @q OR target LIKE @q OR action LIKE @q OR input_json LIKE @q OR output_json LIKE @q)",
+    );
+    args.q = pattern;
   }
 
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
@@ -220,6 +235,44 @@ export function listActions(opts: ListActionsOpts = {}): ActionRecord[] {
     .all(args) as RawAction[];
 
   return rows.map(rawToAction);
+}
+
+/**
+ * Group actions by target (typically a source_id) — one row per "task" or
+ * email/item, with the chain of actions taken on it. Used by the audit UI's
+ * stream view to answer "where are we on this email?".
+ */
+export function listActionStreams(opts: ListActionsOpts = {}): Array<{
+  target: string;
+  entity: string | null;
+  first_at: string;
+  last_at: string;
+  steps: ActionRecord[];
+}> {
+  const actions = listActions({ ...opts, limit: opts.limit ?? 500 });
+  const grouped = new Map<string, ActionRecord[]>();
+  for (const a of actions) {
+    if (!a.target) continue; // streams require a target — entity-level actions are skipped
+    const list = grouped.get(a.target) ?? [];
+    list.push(a);
+    grouped.set(a.target, list);
+  }
+
+  const streams = Array.from(grouped.entries()).map(([target, steps]) => {
+    // Order steps oldest → newest within a stream.
+    steps.sort((a, b) => a.ts.localeCompare(b.ts));
+    return {
+      target,
+      entity: steps[0]?.entity ?? null,
+      first_at: steps[0]?.ts ?? "",
+      last_at: steps[steps.length - 1]?.ts ?? "",
+      steps,
+    };
+  });
+
+  // Sort streams: most-recently active first.
+  streams.sort((a, b) => b.last_at.localeCompare(a.last_at));
+  return streams;
 }
 
 export function getActionById(id: string): ActionRecord | null {

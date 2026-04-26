@@ -341,6 +341,46 @@ export function getAllFactsForEntity(entity: string): Fact[] {
   return rows.map(rawToFact);
 }
 
+/**
+ * Counts how many distinct sources (live + historically superseded) have
+ * asserted the same (entity, predicate, value) triple. Used by the renderer
+ * to show "× N sources" so the user sees that a claim is corroborated rather
+ * than coming from a single document.
+ *
+ * Returns the count plus the most recent source titles (capped at 5) so the
+ * proof-lens can list them inline.
+ */
+export function countCorroborations(
+  entity: string,
+  predicate: string,
+  value: string,
+): { count: number; sources: Array<{ id: string; title: string; ts: string }> } {
+  const rows = db()
+    .prepare(
+      `SELECT DISTINCT s.id AS id, s.title AS title, MAX(f.known_from) AS ts
+         FROM facts f
+         JOIN sources s ON s.id = f.source
+        WHERE f.entity = @entity
+          AND f.predicate = @predicate
+          AND f.value = @value
+        GROUP BY s.id
+        ORDER BY ts DESC
+        LIMIT 5`,
+    )
+    .all({ entity, predicate, value }) as Array<{ id: string; title: string; ts: string }>;
+  // Total count is fast against the same composite index.
+  const total = (db()
+    .prepare(
+      `SELECT COUNT(DISTINCT source) AS n
+         FROM facts
+        WHERE entity = @entity
+          AND predicate = @predicate
+          AND value = @value`,
+    )
+    .get({ entity, predicate, value }) as { n: number }).n;
+  return { count: total, sources: rows };
+}
+
 export function getSource(id: string): Source | null {
   const row = db()
     .prepare(`SELECT * FROM sources WHERE id = @id`)
@@ -369,6 +409,23 @@ function rawToSource(r: RawSource): Source {
 
 export function listSources(): Source[] {
   const rows = db().prepare(`SELECT * FROM sources ORDER BY ingested_at ASC`).all() as RawSource[];
+  return rows.map(rawToSource);
+}
+
+/**
+ * Most-recent sources scoped to a specific entity (newest first). Used by the
+ * renderer's "Recent activity" section so even sources that produced 0 extracted
+ * facts are visible to LLM consumers and human readers.
+ */
+export function listRecentSourcesForEntity(entityId: string, limit = 5): Source[] {
+  const rows = db()
+    .prepare(
+      `SELECT * FROM sources
+       WHERE entity_id = @entity
+       ORDER BY ingested_at DESC
+       LIMIT @limit`,
+    )
+    .all({ entity: entityId, limit }) as RawSource[];
   return rows.map(rawToSource);
 }
 

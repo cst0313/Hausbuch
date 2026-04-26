@@ -18,6 +18,7 @@
 
 import type { Fact, Source, SourceKind } from "./types";
 import { recordAction } from "./actions";
+import { checkCompanyOnCala, type CalaEntityCheck } from "./cala";
 import {
   getEnrichmentCache,
   ident,
@@ -40,7 +41,9 @@ const ENRICHMENT_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 export type EnrichmentKind =
   | "mietpreisbremse_cap"
   | "owner_verified"
-  | "contractor_active_status";
+  | "contractor_active_status"
+  | "owner_cala_verified"
+  | "contractor_cala_verified";
 
 export type EnrichmentResult = {
   kind: EnrichmentKind;
@@ -289,14 +292,21 @@ export async function runEnrichments(
       if (zip) tasks.push(runMietpreisbremse(f, entity, zip));
     }
 
-    // Handelsregister owner check.
+    // Handelsregister owner check (Tavily).
     if (f.predicate === "identity.owner" && typeof f.value === "string") {
       tasks.push(runOwnerVerify(f, entity, f.value));
+      // Cala parallel check — runs only if CALA_API_KEY is present.
+      if (process.env.CALA_API_KEY) {
+        tasks.push(runOwnerCalaVerify(f, entity, f.value));
+      }
     }
 
     // Contractor active-status: any predicate matching contractor.*
     if (f.predicate.startsWith("contractor.") && typeof f.value === "string") {
       tasks.push(runContractorActive(f, entity, f.value));
+      if (process.env.CALA_API_KEY) {
+        tasks.push(runContractorCalaVerify(f, entity, f.value));
+      }
     }
   }
 
@@ -309,43 +319,51 @@ export async function runEnrichments(
       console.log(
         `[enrich] kind=${s.value.kind} served_from=${s.value.served_from} latency_ms=${s.value.latency_ms} fact_id=${s.value.fact.id}`,
       );
+      const partner = partnerForKind(s.value.kind);
       recordAction({
-        actor: "tavily",
+        actor: partner,
         action: `enrich.${s.value.kind}`,
         entity,
         target: s.value.trigger_fact_id,
         input: { kind: s.value.kind },
         output: { matched: true, served_from: s.value.served_from, fact_id: s.value.fact.id },
         latency_ms: s.value.latency_ms,
-        cost_usd: s.value.served_from === "live" ? 0.01 : 0,
-        partner: "tavily",
+        cost_tokens: partner === "cala" && s.value.served_from === "live" ? 1 : null,
+        cost_usd: s.value.served_from === "live" && partner === "tavily" ? 0.01 : 0,
+        partner,
       });
     } else if (s.status === "fulfilled") {
       console.log(
         `[enrich] kind=${s.value.kind} skipped reason=${s.value.skipped_reason ?? "no-match"} latency_ms=${s.value.latency_ms}`,
       );
+      const partner = partnerForKind(s.value.kind);
       recordAction({
-        actor: "tavily",
+        actor: partner,
         action: `enrich.${s.value.kind}`,
         entity,
         target: s.value.trigger_fact_id,
         input: { kind: s.value.kind },
         output: { matched: false, reason: s.value.skipped_reason ?? "no-match", served_from: s.value.served_from },
         latency_ms: s.value.latency_ms,
-        partner: "tavily",
+        partner,
       });
     } else {
       console.warn(`[enrich] task rejected: ${String(s.reason)}`);
       recordAction({
-        actor: "tavily",
+        actor: "system",
         action: "enrich.failed",
         entity,
         output: { error: String(s.reason) },
-        partner: "tavily",
       });
     }
   }
   return out;
+}
+
+function partnerForKind(kind: EnrichmentKind): "cala" | "tavily" {
+  return kind === "owner_cala_verified" || kind === "contractor_cala_verified"
+    ? "cala"
+    : "tavily";
 }
 
 // ── Per-kind runners ─────────────────────────────────────────────────────────
@@ -478,6 +496,104 @@ async function runContractorActive(
   };
 }
 
+async function runOwnerCalaVerify(
+  trigger: Fact,
+  entity: string,
+  company: string,
+): Promise<EnrichmentResult> {
+  return runCalaCompanyCheck(trigger, entity, company, "owner_cala_verified", "identity.owner_cala_verified");
+}
+
+async function runContractorCalaVerify(
+  trigger: Fact,
+  entity: string,
+  name: string,
+): Promise<EnrichmentResult> {
+  return runCalaCompanyCheck(trigger, entity, name, "contractor_cala_verified", "contractor.cala_verified");
+}
+
+async function runCalaCompanyCheck(
+  trigger: Fact,
+  entity: string,
+  company: string,
+  kind: EnrichmentKind,
+  predicate: string,
+): Promise<EnrichmentResult> {
+  const t0 = performance.now();
+  const norm = normalizeCompany(company);
+  if (!norm) {
+    return {
+      kind,
+      trigger_fact_id: trigger.id,
+      fact: null,
+      served_from: "skip",
+      skipped_reason: "empty-company",
+      latency_ms: 0,
+    };
+  }
+
+  const cacheKey = kind;
+  const cached = getEnrichmentCache(cacheKey, norm);
+  let lookup: CalaEntityCheck | null = null;
+  let served_from: "live" | "cache" | "skip" = "skip";
+
+  if (cached) {
+    lookup = JSON.parse(cached.payload_json) as CalaEntityCheck;
+    served_from = "cache";
+  } else {
+    lookup = await checkCompanyOnCala(company);
+    if (lookup) {
+      setEnrichmentCache(cacheKey, norm, lookup, ENRICHMENT_TTL_MS);
+      served_from = "live";
+    }
+  }
+
+  const latency_ms = Math.round(performance.now() - t0);
+
+  if (!lookup) {
+    return {
+      kind,
+      trigger_fact_id: trigger.id,
+      fact: null,
+      served_from: "skip",
+      skipped_reason: "cala-failed-or-no-key",
+      latency_ms,
+    };
+  }
+
+  const top = lookup.best_match;
+  const detailParts: string[] = [];
+  if (top?.name && top.name !== company) detailParts.push(`matched: ${top.name}`);
+  if (top?.registration_number) detailParts.push(top.registration_number);
+  if (top?.status) detailParts.push(top.status);
+  if (top?.description && detailParts.length === 0) {
+    // First sentence only, capped, so the quote stays compact.
+    const firstSentence = top.description.split(/(?<=[.!?])\s+/)[0] ?? top.description;
+    detailParts.push(firstSentence.slice(0, 120));
+  }
+  const detailSuffix = detailParts.length ? ` · ${detailParts.join(" · ")}` : "";
+
+  const fact = writeEnrichmentFact({
+    entity,
+    trigger,
+    predicate,
+    value: lookup.matched ? "true" : "false",
+    sourceTitle: `cala:${kind}:${norm}`,
+    sourceUrl: lookup.source_url ?? undefined,
+    quote: `verified via Cala at ${hhmm()}${detailSuffix}`,
+    confidence: lookup.matched ? 0.85 : 0.5,
+    sourceKind: "cala",
+  });
+
+  return {
+    kind,
+    trigger_fact_id: trigger.id,
+    fact,
+    served_from,
+    latency_ms,
+  };
+}
+
 // ── Persistence helper ───────────────────────────────────────────────────────
 
 type WriteEnrichmentFactArgs = {
@@ -490,6 +606,8 @@ type WriteEnrichmentFactArgs = {
   sourceUrl?: string;
   quote: string;
   confidence: number;
+  /** Source kind, defaults to "tavily" for backward compatibility. */
+  sourceKind?: SourceKind;
 };
 
 function writeEnrichmentFact(args: WriteEnrichmentFactArgs): Fact {
@@ -498,7 +616,7 @@ function writeEnrichmentFact(args: WriteEnrichmentFactArgs): Fact {
   const sourceId = newSourceId(args.sourceTitle);
   const source: Source = {
     id: sourceId,
-    kind: "tavily" as SourceKind,
+    kind: (args.sourceKind ?? "tavily") as SourceKind,
     title: args.sourceTitle,
     url: args.sourceUrl,
     ingested_at: now,

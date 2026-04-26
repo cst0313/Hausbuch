@@ -3,6 +3,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import {
+  ReactFlow,
+  Background,
+  Controls,
+  MiniMap,
+  Position,
+  type Node,
+  type Edge,
+  type NodeMouseHandler,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
 import { Nav } from "@/components/Nav";
 
 type GraphNode = {
@@ -17,7 +28,11 @@ type GraphNode = {
   owns?: string[];
 };
 
-type GraphEdge = { from: string; to: string; kind: "parent" | "tenancy" | "ownership" };
+type GraphEdge = {
+  from: string;
+  to: string;
+  kind: "parent" | "tenancy" | "ownership";
+};
 
 type GraphPayload = {
   nodes: GraphNode[];
@@ -34,18 +49,28 @@ type GraphPayload = {
 };
 
 const TYPE_COLOR: Record<string, string> = {
-  weg: "var(--brand)",
-  building: "var(--severity-high)",
-  unit: "var(--severity-medium)",
-  tenant: "var(--rep-trusted)",
-  owner: "var(--rep-neutral)",
-  contractor: "var(--severity-low)",
+  weg: "#c08040",
+  building: "#b86b3a",
+  unit: "#9aa6c7",
+  tenant: "#5fa07a",
+  owner: "#a07ac0",
+  contractor: "#7a8aa0",
+};
+
+// Column x-positions for the layered layout. We compute y per node to spread
+// each column's contents top-to-bottom and to align tenants with their unit.
+const COL_X = {
+  weg: 0,
+  building: 280,
+  unit: 560,
+  person: 880,
+  contractor: 1180,
 };
 
 export default function GraphPage() {
   const [data, setData] = useState<GraphPayload | null>(null);
-  const [hovered, setHovered] = useState<GraphNode | null>(null);
   const [filterType, setFilterType] = useState<string | null>(null);
+  const [hovered, setHovered] = useState<GraphNode | null>(null);
 
   useEffect(() => {
     fetch("/api/graph")
@@ -54,11 +79,23 @@ export default function GraphPage() {
       .catch(() => setData(null));
   }, []);
 
+  const { nodes, edges } = useMemo(() => buildFlowGraph(data, filterType), [data, filterType]);
+
+  const onNodeClick: NodeMouseHandler = (_e, node) => {
+    const id = node.id;
+    window.location.href = `/context/${encodeURIComponent(id)}`;
+  };
+  const onNodeMouseEnter: NodeMouseHandler = (_e, node) => {
+    const original = data?.nodes.find((n) => n.id === node.id) ?? null;
+    setHovered(original);
+  };
+  const onNodeMouseLeave: NodeMouseHandler = () => setHovered(null);
+
   return (
     <>
       <Nav />
-      <main style={{ maxWidth: 1280, margin: "0 auto", padding: "40px 32px 96px" }}>
-        <header style={{ marginBottom: 24 }}>
+      <main style={{ maxWidth: 1400, margin: "0 auto", padding: "32px 24px 0" }}>
+        <header style={{ marginBottom: 18 }}>
           <p
             className="mono"
             style={{
@@ -69,11 +106,11 @@ export default function GraphPage() {
               margin: "0 0 12px",
             }}
           >
-            / knowledge graph
+            / knowledge graph · interactive
           </p>
           <h1
             style={{
-              fontSize: 40,
+              fontSize: 38,
               fontWeight: 500,
               letterSpacing: "-0.025em",
               lineHeight: 1.05,
@@ -82,43 +119,85 @@ export default function GraphPage() {
           >
             The seeded corpus,{" "}
             <span className="serif-italic" style={{ fontWeight: 400 }}>
-              one diagram.
+              live.
             </span>
           </h1>
           <p
             style={{
-              margin: "12px 0 0",
+              margin: "10px 0 0",
               fontSize: 14,
               color: "var(--fg-muted)",
-              maxWidth: 720,
+              maxWidth: 760,
               lineHeight: 1.55,
             }}
           >
-            One WEG, three buildings, fifty-two units, twenty-six tenants, thirty-five
-            owners, sixteen contractors. Nodes are entities; lines are real relationships
-            in the fact store (<code className="mono">parent_id</code>,{" "}
-            <code className="mono">tenancy.unit</code>,{" "}
-            <code className="mono">ownership.unit</code>). Click any node to open its
-            Context.md.
+            Drag nodes around, zoom with the wheel, click a node to open its
+            Context.md. Edges are real relationships from the fact store —{" "}
+            <code className="mono">parent_id</code> (grey),{" "}
+            <code className="mono">tenancy.unit</code>{" "}
+            <span style={{ color: TYPE_COLOR.tenant }}>green</span>,{" "}
+            <code className="mono">ownership.unit</code>{" "}
+            <span style={{ color: TYPE_COLOR.owner }}>purple</span>.
           </p>
         </header>
 
         <Legend stats={data?.stats} active={filterType} onToggle={setFilterType} />
+      </main>
 
+      <div
+        style={{
+          height: "calc(100vh - 280px)",
+          minHeight: 600,
+          margin: "16px 24px 24px",
+          border: "1px solid var(--border)",
+          borderRadius: 12,
+          background: "var(--bg-elevated)",
+          position: "relative",
+        }}
+      >
         {!data ? (
-          <p className="mono" style={{ marginTop: 40, fontSize: 12, color: "var(--fg-dim)" }}>
+          <p
+            className="mono"
+            style={{
+              position: "absolute",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              fontSize: 12,
+              color: "var(--fg-dim)",
+            }}
+          >
             loading graph…
           </p>
         ) : (
-          <Diagram
-            data={data}
-            filterType={filterType}
-            onHover={setHovered}
-          />
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            fitView
+            fitViewOptions={{ padding: 0.2 }}
+            onNodeClick={onNodeClick}
+            onNodeMouseEnter={onNodeMouseEnter}
+            onNodeMouseLeave={onNodeMouseLeave}
+            nodesDraggable
+            nodesConnectable={false}
+            elementsSelectable
+            proOptions={{ hideAttribution: true }}
+            minZoom={0.1}
+            maxZoom={2}
+          >
+            <Background gap={24} size={1} color="var(--border-muted)" />
+            <Controls position="bottom-right" showInteractive={false} />
+            <MiniMap
+              pannable
+              zoomable
+              nodeColor={(n) => (n.data as { typeColor?: string })?.typeColor ?? "#888"}
+              style={{ background: "var(--bg)" }}
+            />
+          </ReactFlow>
         )}
 
         {hovered && <HoverCard node={hovered} />}
-      </main>
+      </div>
     </>
   );
 }
@@ -148,7 +227,6 @@ function Legend({
         display: "flex",
         flexWrap: "wrap",
         gap: 8,
-        marginBottom: 18,
         alignItems: "center",
       }}
     >
@@ -165,7 +243,7 @@ function Legend({
               padding: "6px 12px",
               borderRadius: 999,
               border: `1px solid ${isActive ? TYPE_COLOR[c.type] : "var(--border)"}`,
-              background: isActive ? TYPE_COLOR[c.type] + "22" : "var(--bg)",
+              background: isActive ? TYPE_COLOR[c.type] + "33" : "var(--bg)",
               color: "var(--fg)",
               fontSize: 12,
               cursor: "pointer",
@@ -195,7 +273,7 @@ function Legend({
           </button>
         );
       })}
-      {stats && (
+      {stats && stats.open_incidents > 0 && (
         <span
           className="mono"
           style={{
@@ -214,152 +292,16 @@ function Legend({
   );
 }
 
-// ── The diagram itself ────────────────────────────────────────────────────
-
-function Diagram({
-  data,
-  filterType,
-  onHover,
-}: {
-  data: GraphPayload;
-  filterType: string | null;
-  onHover: (n: GraphNode | null) => void;
-}) {
-  // Layout: hierarchical columns from left to right.
-  //   col 1: WEG (center)
-  //   col 2: Buildings
-  //   col 3: Units (grouped per building)
-  //   col 4: Tenants + Owners (per unit)
-  //   col 5: Contractors (separate cluster)
-  const layout = useMemo(() => buildLayout(data), [data]);
-
-  const muted = (t: string) => filterType !== null && filterType !== t;
-  const W = 1240;
-  const H = layout.height;
-
-  return (
-    <div
-      style={{
-        background: "var(--bg-elevated)",
-        border: "1px solid var(--border)",
-        borderRadius: 12,
-        padding: 16,
-        overflow: "auto",
-      }}
-    >
-      <svg
-        viewBox={`0 0 ${W} ${H}`}
-        width="100%"
-        style={{ display: "block", minHeight: 600 }}
-      >
-        {/* Edges first so nodes paint on top */}
-        {data.edges.map((edge, i) => {
-          const a = layout.positions.get(edge.from);
-          const b = layout.positions.get(edge.to);
-          if (!a || !b) return null;
-          const dimmed =
-            filterType !== null &&
-            filterType !== a.type &&
-            filterType !== b.type;
-          const stroke =
-            edge.kind === "parent"
-              ? "var(--border-muted)"
-              : edge.kind === "tenancy"
-                ? "var(--rep-trusted)"
-                : "var(--rep-neutral)";
-          return (
-            <path
-              key={i}
-              d={`M ${a.x} ${a.y} C ${(a.x + b.x) / 2} ${a.y}, ${(a.x + b.x) / 2} ${b.y}, ${b.x} ${b.y}`}
-              stroke={stroke}
-              strokeWidth={edge.kind === "parent" ? 1 : 0.7}
-              strokeOpacity={dimmed ? 0.08 : edge.kind === "parent" ? 0.55 : 0.4}
-              fill="none"
-            />
-          );
-        })}
-
-        {/* Column labels */}
-        {layout.columns.map((col) => (
-          <text
-            key={col.label}
-            x={col.x}
-            y={20}
-            textAnchor="middle"
-            fontSize="10"
-            fontFamily="var(--font-mono)"
-            fill="var(--fg-dim)"
-            letterSpacing="0.08em"
-          >
-            {col.label.toUpperCase()}
-          </text>
-        ))}
-
-        {/* Nodes */}
-        {data.nodes.map((node) => {
-          const pos = layout.positions.get(node.id);
-          if (!pos) return null;
-          const dim = muted(node.type);
-          const radius = node.type === "weg" ? 18 : node.type === "building" ? 12 : node.type === "unit" ? 7 : 5;
-          const color = TYPE_COLOR[node.type] ?? "var(--fg-dim)";
-          const showLabel = node.type === "weg" || node.type === "building" || node.type === "contractor" || node.type === "unit";
-          return (
-            <g
-              key={node.id}
-              opacity={dim ? 0.18 : 1}
-              style={{ cursor: "pointer" }}
-              onMouseEnter={() => onHover(node)}
-              onMouseLeave={() => onHover(null)}
-              onClick={() => {
-                window.location.href = `/context/${encodeURIComponent(node.id)}`;
-              }}
-            >
-              <circle
-                cx={pos.x}
-                cy={pos.y}
-                r={radius + (node.open_incidents > 0 ? 3 : 0)}
-                fill={node.open_incidents > 0 ? "var(--severity-critical)" : color}
-                fillOpacity={node.open_incidents > 0 ? 0.18 : 0.18}
-                stroke={node.open_incidents > 0 ? "var(--severity-critical)" : color}
-                strokeWidth={node.open_incidents > 0 ? 1.4 : 0.9}
-              />
-              {showLabel && (
-                <text
-                  x={pos.x}
-                  y={pos.y + radius + 14}
-                  textAnchor="middle"
-                  fontSize={node.type === "weg" ? 13 : node.type === "building" ? 11 : 10}
-                  fontFamily="var(--font-sans)"
-                  fontWeight={node.type === "weg" ? 600 : 400}
-                  fill="var(--fg)"
-                >
-                  {node.type === "weg"
-                    ? "WEG"
-                    : node.type === "building"
-                      ? node.name.replace(/^Haus\s+/, "Haus ")
-                      : node.type === "unit"
-                        ? node.name
-                        : truncate(node.name, 18)}
-                </text>
-              )}
-            </g>
-          );
-        })}
-      </svg>
-    </div>
-  );
-}
-
 function HoverCard({ node }: { node: GraphNode }) {
   return (
     <div
       style={{
-        position: "fixed",
-        right: 24,
-        bottom: 24,
+        position: "absolute",
+        right: 16,
+        bottom: 16,
         maxWidth: 320,
-        padding: "14px 16px",
-        background: "var(--bg-elevated)",
+        padding: "12px 14px",
+        background: "var(--bg)",
         border: "1px solid var(--border)",
         borderRadius: 10,
         boxShadow: "0 4px 24px rgba(0,0,0,0.18)",
@@ -378,11 +320,8 @@ function HoverCard({ node }: { node: GraphNode }) {
       >
         {node.type}
       </div>
-      <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 8 }}>{node.name}</div>
-      <div
-        className="mono"
-        style={{ fontSize: 11, color: "var(--fg-muted)", lineHeight: 1.55 }}
-      >
+      <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 6 }}>{node.name}</div>
+      <div className="mono" style={{ fontSize: 11, color: "var(--fg-muted)", lineHeight: 1.5 }}>
         <div>{node.facts} facts</div>
         {node.open_incidents > 0 && (
           <div style={{ color: "var(--severity-critical)" }}>
@@ -398,7 +337,7 @@ function HoverCard({ node }: { node: GraphNode }) {
         className="mono"
         style={{
           display: "inline-block",
-          marginTop: 10,
+          marginTop: 8,
           fontSize: 11,
           color: "var(--brand)",
           textDecoration: "none",
@@ -410,132 +349,186 @@ function HoverCard({ node }: { node: GraphNode }) {
   );
 }
 
-// ── Layout: hierarchical columns ──────────────────────────────────────────
+// ── Build the React Flow node + edge arrays from the API payload ──────────
 
-type LayoutPos = { x: number; y: number; type: string };
+function buildFlowGraph(
+  data: GraphPayload | null,
+  filterType: string | null,
+): { nodes: Node[]; edges: Edge[] } {
+  if (!data) return { nodes: [], edges: [] };
 
-function buildLayout(data: GraphPayload): {
-  positions: Map<string, LayoutPos>;
-  columns: Array<{ x: number; label: string }>;
-  height: number;
-} {
-  const positions = new Map<string, LayoutPos>();
+  // Layer the nodes by type into 5 columns. Inside each column we space
+  // entries top-to-bottom with a fixed step, except units / tenants / owners
+  // which try to align with their related unit so the parent edges are flat.
+  const positions = new Map<string, { x: number; y: number }>();
 
-  // Five columns at fixed x positions across a ~1240-wide canvas.
-  const cols = {
-    weg: 100,
-    building: 280,
-    unit: 480,
-    person: 770,
-    contractor: 1100,
-  };
-
-  const TOP = 60;
-  const BOTTOM_PAD = 60;
-  const buildings = data.nodes.filter((n) => n.type === "building").sort((a, b) => a.id.localeCompare(b.id));
+  const buildings = data.nodes
+    .filter((n) => n.type === "building")
+    .sort((a, b) => a.id.localeCompare(b.id));
   const units = data.nodes.filter((n) => n.type === "unit");
   const tenants = data.nodes.filter((n) => n.type === "tenant");
   const owners = data.nodes.filter((n) => n.type === "owner");
   const contractors = data.nodes.filter((n) => n.type === "contractor");
-
-  // WEG: vertically centered.
   const weg = data.nodes.find((n) => n.type === "weg");
 
-  // Buildings: spread evenly.
-  const bldgGap = 200;
-  buildings.forEach((b, i) => {
-    positions.set(b.id, {
-      x: cols.building,
-      y: TOP + 60 + i * bldgGap,
-      type: "building",
+  const TOP = 0;
+  const UNIT_STEP = 36;
+  const PERSON_STEP = 40;
+
+  // Units grouped by building, sorted within each group.
+  const unitsByBldg = new Map<string, GraphNode[]>();
+  for (const u of units) {
+    const k = u.parent_id ?? "orphan";
+    if (!unitsByBldg.has(k)) unitsByBldg.set(k, []);
+    unitsByBldg.get(k)!.push(u);
+  }
+  for (const list of unitsByBldg.values()) {
+    list.sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { numeric: true }),
+    );
+  }
+
+  // Lay out building columns vertically with a generous gap so each
+  // building's units fit underneath without overlapping the next one.
+  let unitCursor = TOP;
+  buildings.forEach((b) => {
+    const list = unitsByBldg.get(b.id) ?? [];
+    const stripStart = unitCursor;
+    const stripCenter = stripStart + (list.length * UNIT_STEP) / 2;
+    positions.set(b.id, { x: COL_X.building, y: stripCenter });
+    list.forEach((u, i) => {
+      positions.set(u.id, { x: COL_X.unit, y: stripStart + i * UNIT_STEP });
     });
+    unitCursor = stripStart + list.length * UNIT_STEP + 80;
   });
 
-  // Units: cluster per building. We pack them in a small column under each building.
-  const unitsByBuilding = new Map<string, GraphNode[]>();
-  for (const u of units) {
-    const parent = u.parent_id ?? "orphan";
-    if (!unitsByBuilding.has(parent)) unitsByBuilding.set(parent, []);
-    unitsByBuilding.get(parent)!.push(u);
-  }
-  // Sort each building's units by einheit_nr if available.
-  for (const list of unitsByBuilding.values()) {
-    list.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-  }
-  const UNIT_ROW_HEIGHT = 14;
-  // For each building, lay units in a vertical strip starting from the building's y.
-  for (const b of buildings) {
-    const list = unitsByBuilding.get(b.id) ?? [];
-    const bPos = positions.get(b.id)!;
-    // Centre the strip on the building's y.
-    const stripHeight = list.length * UNIT_ROW_HEIGHT;
-    const startY = bPos.y - stripHeight / 2;
-    list.forEach((u, i) => {
-      positions.set(u.id, {
-        x: cols.unit,
-        y: startY + i * UNIT_ROW_HEIGHT,
-        type: "unit",
-      });
-    });
-  }
-
-  // Tenants: place next to their unit.
+  // Tenant aligned with their unit y, owners stacked next to their first unit.
   for (const t of tenants) {
     if (!t.unit) continue;
-    const upos = positions.get(t.unit);
-    if (!upos) continue;
-    positions.set(t.id, { x: cols.person, y: upos.y, type: "tenant" });
+    const u = positions.get(t.unit);
+    if (!u) continue;
+    positions.set(t.id, { x: COL_X.person, y: u.y });
   }
-  // Owners: place at average y of their owned units; slight offset right of tenants.
+
+  // Owners — at the average y of owned units; offset slightly so they don't
+  // overlap their tenant counterparts.
+  const ownerCursor = new Map<number, number>();
   for (const o of owners) {
-    if (!o.owns || o.owns.length === 0) {
-      // Owners with no unit data: stack at the end
-      continue;
-    }
+    if (!o.owns || o.owns.length === 0) continue;
     const ys = o.owns
-      .map((unitId) => positions.get(unitId)?.y)
+      .map((id) => positions.get(id)?.y)
       .filter((y): y is number => typeof y === "number");
     if (ys.length === 0) continue;
-    const avgY = ys.reduce((a, b) => a + b, 0) / ys.length;
-    positions.set(o.id, { x: cols.person + 80, y: avgY, type: "owner" });
+    const avg = ys.reduce((a, b) => a + b, 0) / ys.length;
+    // Bucket by integer y so coincident owners get vertical offsets instead of
+    // stacking on top of each other.
+    const bucket = Math.round(avg / 30);
+    const offset = (ownerCursor.get(bucket) ?? 0) * 30;
+    ownerCursor.set(bucket, (ownerCursor.get(bucket) ?? 0) + 1);
+    positions.set(o.id, { x: COL_X.person + 110, y: avg + offset });
   }
 
-  // Contractors: vertical column on the right, evenly spaced.
-  const contractorTop = TOP + 60;
-  const contractorGap = Math.max(28, ((buildings.length * bldgGap) - 60) / Math.max(1, contractors.length - 1));
+  // Contractors evenly spaced along the right column.
   contractors.forEach((c, i) => {
-    positions.set(c.id, {
-      x: cols.contractor,
-      y: contractorTop + i * contractorGap,
-      type: "contractor",
-    });
+    positions.set(c.id, { x: COL_X.contractor, y: TOP + i * PERSON_STEP });
   });
 
-  // WEG: roughly aligned with the average building y.
+  // WEG at the average building y.
   if (weg) {
-    const avgBldgY =
-      buildings.length > 0
-        ? buildings.reduce((s, b) => s + (positions.get(b.id)?.y ?? 0), 0) / buildings.length
-        : 200;
-    positions.set(weg.id, { x: cols.weg, y: avgBldgY, type: "weg" });
+    const ys = buildings
+      .map((b) => positions.get(b.id)?.y)
+      .filter((y): y is number => typeof y === "number");
+    const y = ys.length ? ys.reduce((a, b) => a + b, 0) / ys.length : 200;
+    positions.set(weg.id, { x: COL_X.weg, y });
   }
 
-  // Compute total height from the lowest node we placed.
-  let maxY = TOP;
-  for (const p of positions.values()) maxY = Math.max(maxY, p.y);
-  const height = maxY + BOTTOM_PAD;
+  // Build the React Flow nodes. We use the default node renderer with a
+  // styled label so we don't have to register custom node types — keeps the
+  // page lean.
+  const nodes: Node[] = data.nodes
+    .filter((n) => positions.has(n.id))
+    .map((n) => {
+      const p = positions.get(n.id)!;
+      const dim = filterType !== null && filterType !== n.type;
+      const color = TYPE_COLOR[n.type] ?? "#888";
+      const isOpen = n.open_incidents > 0;
+      const labelStyle: React.CSSProperties = {
+        padding: "6px 10px",
+        borderRadius: n.type === "weg" || n.type === "building" ? 8 : 14,
+        background:
+          n.type === "weg"
+            ? color + "22"
+            : isOpen
+              ? "rgba(220,80,60,0.12)"
+              : "var(--bg)",
+        color: "var(--fg)",
+        border: `1.4px solid ${isOpen ? "var(--severity-critical)" : color}`,
+        fontSize: n.type === "weg" ? 14 : n.type === "building" ? 12 : 11,
+        fontWeight: n.type === "weg" ? 600 : 500,
+        minWidth: n.type === "weg" ? 80 : n.type === "building" ? 90 : 70,
+        textAlign: "center" as const,
+        opacity: dim ? 0.18 : 1,
+        whiteSpace: "nowrap" as const,
+      };
+      return {
+        id: n.id,
+        position: p,
+        data: {
+          label: (
+            <span style={labelStyle}>
+              {n.type === "weg"
+                ? "WEG"
+                : n.type === "building"
+                  ? n.name
+                  : n.type === "unit"
+                    ? n.name
+                    : truncate(n.name.replace(/^(?:Frau|Herr|Herrn)\s+/, ""), 20)}
+            </span>
+          ),
+          typeColor: color,
+        },
+        style: {
+          background: "transparent",
+          border: "none",
+          padding: 0,
+          opacity: dim ? 0.3 : 1,
+        },
+        sourcePosition: Position.Right,
+        targetPosition: Position.Left,
+        draggable: true,
+        connectable: false,
+      };
+    });
 
-  return {
-    positions,
-    columns: [
-      { x: cols.weg, label: "WEG" },
-      { x: cols.building, label: "Buildings" },
-      { x: cols.unit, label: "Units" },
-      { x: cols.person, label: "Tenants · Owners" },
-      { x: cols.contractor, label: "Contractors" },
-    ],
-    height,
-  };
+  // Edges. Bezier looks best for this scale; we color by relationship kind.
+  const edges: Edge[] = data.edges
+    .filter((e) => positions.has(e.from) && positions.has(e.to))
+    .map((e, i) => {
+      const dim =
+        filterType !== null &&
+        !data.nodes.some(
+          (n) => (n.id === e.from || n.id === e.to) && n.type === filterType,
+        );
+      const stroke =
+        e.kind === "parent"
+          ? "var(--border-muted)"
+          : e.kind === "tenancy"
+            ? TYPE_COLOR.tenant
+            : TYPE_COLOR.owner;
+      return {
+        id: `e${i}-${e.from}-${e.to}`,
+        source: e.from,
+        target: e.to,
+        type: "default",
+        style: {
+          stroke,
+          strokeWidth: e.kind === "parent" ? 1 : 0.8,
+          opacity: dim ? 0.06 : e.kind === "parent" ? 0.55 : 0.5,
+        },
+      };
+    });
+
+  return { nodes, edges };
 }
 
 function truncate(s: string, n: number): string {

@@ -36,15 +36,28 @@ export type Router = {
   contractorByFirma: Map<string, string>;
 };
 
+/**
+ * Strip a leading German salutation so we match a recipient name in a PDF
+ * (typically just "Magrit Mitschke") against an entity whose name includes
+ * the salutation ("Frau Magrit Mitschke"). Without this normalisation the
+ * router auto-created phantom entities (tenant:magrit-mitschke alongside
+ * the real tenant:MIE-016) for every Hausverwaltung letter.
+ */
+function stripSalutation(name: string): string {
+  return name.replace(/^\s*(?:frau|herr|herrn|firma|familie)\s+/i, "").trim();
+}
+
 export function buildRouter(): Router {
   const tenantByName = new Map<string, string>();
   const ownerByName = new Map<string, string>();
   const contractorByFirma = new Map<string, string>();
   for (const e of listEntities({ type: "tenant" })) {
     tenantByName.set(e.name.toLowerCase(), e.id);
+    tenantByName.set(stripSalutation(e.name).toLowerCase(), e.id);
   }
   for (const e of listEntities({ type: "owner" })) {
     ownerByName.set(e.name.toLowerCase(), e.id);
+    ownerByName.set(stripSalutation(e.name).toLowerCase(), e.id);
   }
   for (const e of listEntities({ type: "contractor" })) {
     const facts = getAllFactsForEntity(e.id).filter((f) => f.known_to === null);
@@ -102,9 +115,10 @@ export function routeForDoc(
   const recipient = probeFacts.find((f) => f.predicate === "recipient.name")?.value;
   if (typeof recipient === "string") {
     const r = recipient.toLowerCase();
-    const tid = router.tenantByName.get(r);
+    const rBare = stripSalutation(recipient).toLowerCase();
+    const tid = router.tenantByName.get(r) ?? router.tenantByName.get(rBare);
     if (tid) return { entity: tid, auto_created: false, how: "letter→tenant" };
-    const oid = router.ownerByName.get(r);
+    const oid = router.ownerByName.get(r) ?? router.ownerByName.get(rBare);
     if (oid) return { entity: oid, auto_created: false, how: "letter→owner" };
 
     // No match → auto-create. Use letter.kind as a heuristic for tenant vs owner:

@@ -12,6 +12,7 @@
     "@anthropic-ai/sdk": "^0.91.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/pdf-parse": "^1.1.5",
+    "@xyflow/react": "^12.10.2",
     "adm-zip": "^0.5.17",
     "better-sqlite3": "^12.9.0",
     "jszip": "^3.10.1",

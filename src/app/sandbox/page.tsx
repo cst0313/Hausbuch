@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Nav } from "@/components/Nav";
-import { UploadInspector } from "@/components/UploadInspector";
+import { UploadInspector, type IngestSummary } from "@/components/UploadInspector";
 import { AddEntityModal } from "@/components/AddEntityModal";
 import { CmdK } from "@/components/CmdK";
 
@@ -42,11 +42,13 @@ type SampleFixture = {
 type SandboxState = "empty" | "sample" | "uploaded";
 
 export default function SandboxPage() {
-  // sandboxStartedAt tracks when this session opened, so when the user
-  // uploads a real file we can filter /api/recommendations to recs
-  // whose triggering source landed AFTER the session started — keeps
-  // the seeded corpus's 200+ recs out of the sandbox view.
-  const sandboxStartedAt = useRef(new Date().toISOString());
+  // sandboxEntityIds tracks which entity IDs were touched by uploads in
+  // this sandbox session. Used to filter /api/recommendations to JUST
+  // those entities — keeps the seeded corpus's 200+ recs out of view.
+  // Filtering by created_at didn't work because rec.created_at is the
+  // OLDEST fact's known_from; ingesting against an entity that already
+  // had old facts gave back-dated created_at values.
+  const sandboxEntityIds = useRef<Set<string>>(new Set());
 
   const [state, setState] = useState<SandboxState>("empty");
   const [recs, setRecs] = useState<SandboxRec[]>([]);
@@ -98,24 +100,41 @@ export default function SandboxPage() {
   };
 
   /**
-   * Real upload path. After the engine ingests, pull recommendations
-   * but only keep ones whose created_at is after this sandbox session
-   * started — anything older belongs to the seeded corpus and isn't
-   * what the user just uploaded.
+   * Real upload path. The UploadInspector hands us a summary including
+   * `entities_changed` — the entities the ingest actually touched. We
+   * track those IDs and filter /api/recommendations to recs whose
+   * entity_id is in the set. That gives the user every rec the
+   * just-uploaded data triggers, regardless of whether the entity
+   * already had older facts in the seeded corpus.
    */
-  const onIngested = async () => {
+  const onIngested = async (ingest?: IngestSummary) => {
+    if (ingest) {
+      for (const e of ingest.entities_changed) {
+        sandboxEntityIds.current.add(e.id);
+      }
+    }
     try {
-      const data = (await fetch("/api/recommendations").then((r) => r.json())) as { recommendations?: SandboxRec[] };
+      const data = (await fetch("/api/recommendations").then((r) => r.json())) as {
+        recommendations?: SandboxRec[];
+      };
       const all = data.recommendations ?? [];
-      const fresh = all.filter((r) => (r.created_at ?? "") > sandboxStartedAt.current);
+      const ids = sandboxEntityIds.current;
+      const fresh = ids.size > 0 ? all.filter((r) => ids.has(r.entity_id)) : [];
+
+      const factsAdded = ingest?.facts_added ?? 0;
+      const filesTotal = ingest?.files_total ?? 0;
+      const filesProcessed = ingest?.files_processed ?? 0;
+
       setRecs(fresh);
-      setSummary({
-        files_total: fresh.length > 0 ? fresh.length : 0,
-        files_processed: fresh.length,
-        facts_added: fresh.reduce((n, r) => n + (r.facts?.length ?? 0), 0),
-        entities_touched: new Set(fresh.map((r) => r.entity_id)).size,
+      setSummary((prev) => ({
+        // Sum across uploads in the same sandbox session so the strip
+        // grows when the user drops more files instead of resetting.
+        files_total: (prev?.files_total ?? 0) + filesTotal,
+        files_processed: (prev?.files_processed ?? 0) + filesProcessed,
+        facts_added: (prev?.facts_added ?? 0) + factsAdded,
+        entities_touched: ids.size,
         open_recs: fresh.length,
-      });
+      }));
       setInfoOnly([]);
       setState("uploaded");
       setTimeout(() => {
@@ -137,7 +156,7 @@ export default function SandboxPage() {
     setSummary(null);
     setInfoOnly([]);
     setMessage(null);
-    sandboxStartedAt.current = new Date().toISOString();
+    sandboxEntityIds.current = new Set();
   };
 
   return (
@@ -200,7 +219,7 @@ function EmptyState({
   message,
 }: {
   onLoadSample: () => void;
-  onIngested: () => void;
+  onIngested: (s: IngestSummary) => void;
   onAddEntity: () => void;
   busy: string;
   message: string | null;
@@ -392,7 +411,7 @@ function LoadedDashboard({
   onReset: () => void;
   onAskAgent: () => void;
   onAddEntity: () => void;
-  onIngested: () => void;
+  onIngested: (s: IngestSummary) => void;
 }) {
   const sevColor = (s: SandboxRec["severity"]) =>
     s === "critical"

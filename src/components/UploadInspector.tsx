@@ -25,12 +25,30 @@ type FileResult = {
   fact_details?: FactDetail[];
 };
 
+type EntityChanged = {
+  id: string;
+  name: string;
+  type: string;
+  fact_count: number;
+};
+
 type UploadResponse = {
   entity: string;
   uploaded: FileResult[];
+  entities_changed?: EntityChanged[];
+  facts_added?: number;
+  files_processed?: number;
+  files_total?: number;
 };
 
-export function UploadInspector({ onIngested }: { onIngested?: () => void } = {}) {
+export type IngestSummary = {
+  entities_changed: EntityChanged[];
+  facts_added: number;
+  files_processed: number;
+  files_total: number;
+};
+
+export function UploadInspector({ onIngested }: { onIngested?: (summary: IngestSummary) => void } = {}) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<UploadResponse | null>(null);
@@ -85,9 +103,16 @@ export function UploadInspector({ onIngested }: { onIngested?: () => void } = {}
         return;
       }
       setResult(data);
-      // Tell parent (e.g. /sandbox) that new facts have landed so it can
-      // refetch /api/recommendations and reveal the dashboard view.
-      onIngested?.();
+      // Tell parent (e.g. /sandbox) what just landed — the entities the
+      // ingest touched, fact / file counts. The sandbox uses this to
+      // filter /api/recommendations to JUST these entities, instead of
+      // surfacing the seeded corpus's pre-existing 200+ open recs.
+      onIngested?.({
+        entities_changed: data.entities_changed ?? [],
+        facts_added: data.facts_added ?? 0,
+        files_processed: data.files_processed ?? data.uploaded?.length ?? 0,
+        files_total: data.files_total ?? data.uploaded?.length ?? 0,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

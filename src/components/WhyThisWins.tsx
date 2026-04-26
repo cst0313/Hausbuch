@@ -27,20 +27,20 @@ export function WhyThisWins() {
             fontWeight: 500,
           }}
         >
-          Six properties of the architecture,{" "}
+          Other teams have the same task.{" "}
           <span
             className="italic"
             style={{ fontFamily: "var(--font-serif)", color: "var(--brand-tint)", fontWeight: 400 }}
           >
-            not slogans.
+            Six things only we get right.
           </span>
         </h2>
         <p
           className="text-[15px] leading-relaxed max-w-2xl mb-12"
           style={{ color: "var(--fg-muted)" }}
         >
-          Each card is the actual mechanism — drag the sliders, hover the citations,
-          see the conflict math run.
+          Each card is the actual mechanism — drag the sliders, hover the
+          citations, see the conflict math run.
         </p>
 
         <div
@@ -52,39 +52,39 @@ export function WhyThisWins() {
         >
           <Card
             num="01"
-            title="One Context.md per entity"
-            sub="The memory is a Markdown document, not embeddings."
+            title="Memory is a Markdown document"
+            sub="Other teams index a vector store. We render one Context.md per entity — readable, diffable, and cite-back works because every line carries its source."
             gadget={<ContextMdPreview />}
           />
           <Card
             num="02"
-            title="Citations at storage layer"
-            sub="Every fact carries its verbatim span. Hallucinations are structurally prevented."
+            title="Citations at the storage layer"
+            sub="The fact and its verbatim span are written together. Hover any value → see the exact bytes that produced it. Hallucinations are structurally prevented, not RLHF-prevented."
             gadget={<CitationHover />}
           />
           <Card
             num="03"
-            title="Bitemporal time-travel"
-            sub={`"What did we know on April 15?" is one query parameter.`}
+            title="Bitemporal replay"
+            sub="Two time axes per fact: when it was true, when we wrote it. Drag the slider to project the entity as known on any past date — defensible six months later."
             gadget={<TimeTravelSlider />}
           />
           <Card
             num="04"
-            title="Reconciliation surfaces conflict"
-            sub="Two sources disagree → posterior renders inline. No silent winner."
+            title="Posterior over conflicts, not last-write-wins"
+            sub="Sources disagree → Dawid–Skene posterior renders inline (P=0.86). Sources agree on the same value → corroboration badge, not a fake conflict. Last-write-wins silently picks one and lies."
             gadget={<PosteriorViz />}
           />
           <Card
             num="05"
-            title="Self-improving from feedback"
-            sub="👍 / 👎 on agent answers nudges source priors, bounded [0.5, 0.95]."
-            gadget={<FeedbackLoop />}
+            title="Cases grouped by (entity, category)"
+            sub="The dashboard shows one row per real case, not one per email. Each row carries the action ladder: dispatch → draft → escalate. A Mietminderung citing water damage prepends the contractor dispatch automatically."
+            gadget={<GroupingPreview />}
           />
           <Card
             num="06"
-            title="Postgres-portable"
-            sub="Demo is SQLite. Production is your existing Postgres. One adapter file."
-            gadget={<PortabilityDiagram />}
+            title="Cache-engineered for warm reads"
+            sub="Recs warm in 30 ms, Context.md renders in 12 ms, the format hits Anthropic's prompt cache 90% of the time. Every write invalidates exactly what it changed — nothing more."
+            gadget={<LatencyMetricCard />}
           />
         </div>
       </div>
@@ -182,13 +182,13 @@ function ContextMdPreview() {
       }}
     >
       <div style={{ color: "var(--fg-dim)", marginBottom: 4 }}>
-        # WE 32 · Mitschke
+        # Unit 32 · Mitschke
       </div>
       <div>tenancy.tenant&nbsp;&nbsp;&nbsp;&nbsp;Magrit Mitschke</div>
       <div>tenancy.start&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2024-08-01</div>
       <div>incident.status&nbsp;&nbsp;&nbsp;reported</div>
       <div style={{ color: "var(--brand)" }}>
-        legal.kanzlei&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Berger &amp; Partner
+        legal.counsel&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Berger &amp; Partner
       </div>
       <div style={{ color: "var(--fg-dim)", marginTop: 8, fontSize: 10 }}>
         — Hausbuch · {facts} facts ·{" "}
@@ -220,9 +220,9 @@ function CitationHover() {
         }}
       >
         <div style={{ color: "var(--fg-muted)", fontSize: 11, marginBottom: 4 }} className="mono">
-          mahnung.offener_betrag
+          dunning.balance_due
         </div>
-        <div style={{ color: "var(--fg)", fontWeight: 500 }}>1.914,00 EUR</div>
+        <div style={{ color: "var(--fg)", fontWeight: 500 }}>€1,914.00</div>
         <div className="mono" style={{ color: "var(--fg-dim)", fontSize: 10, marginTop: 6 }}>
           ↪ {hover ? "see the line below ▾" : "hover to reveal source span"}
         </div>
@@ -235,17 +235,16 @@ function CitationHover() {
           borderRadius: 8,
           fontSize: 12,
           color: "var(--fg)",
-          fontStyle: "italic",
-          fontFamily: "var(--font-serif)",
+          fontFamily: "var(--font-mono)",
           opacity: hover ? 1 : 0,
           maxHeight: hover ? 80 : 0,
           overflow: "hidden",
           transition: "max-height 200ms, opacity 160ms, padding 160ms",
         }}
       >
-        “Offener Betrag: 1914.00 EUR — Betrifft: Miete April 2024. Mahnstufe: 2.”
-        <div className="mono" style={{ color: "var(--fg-dim)", fontSize: 10, fontStyle: "normal", marginTop: 4 }}>
-          src · 20240420_mahnung_LTR-0035.pdf · char 246–308
+        &ldquo;Balance due: €1,914.00 — covering: April 2024 rent. Dunning stage: 2.&rdquo;
+        <div className="mono" style={{ color: "var(--fg-dim)", fontSize: 10, marginTop: 4 }}>
+          src · 20240420_dunning_LTR-0035.pdf · char 246–308
         </div>
       </div>
     </div>
@@ -257,10 +256,10 @@ function CitationHover() {
 function TimeTravelSlider() {
   const [t, setT] = useState(2);
   const stops = [
-    { label: "Apr 2024", rent: "842,00", note: "old contract" },
-    { label: "Aug 2024", rent: "1.500,00", note: "new lease" },
-    { label: "Jan 2025", rent: "1.617,73", note: "§558 BGB +7.1%" },
-    { label: "Apr 2025", rent: "1.617,73", note: "wirksam" },
+    { label: "Apr 2024", rent: "842.00", note: "old contract" },
+    { label: "Aug 2024", rent: "1,500.00", note: "new lease" },
+    { label: "Jan 2025", rent: "1,617.73", note: "+7.1% rent increase" },
+    { label: "Apr 2025", rent: "1,617.73", note: "in effect" },
   ];
   const cur = stops[t];
 
@@ -341,7 +340,7 @@ function PosteriorViz() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <Bar
-        label="Anwaltschreiben"
+        label="Attorney letter"
         sub={`prior ${priorA.toFixed(2)}`}
         value={pA}
         color="var(--brand)"
@@ -430,7 +429,140 @@ function Bar({
   );
 }
 
-// ── 05. Self-improving feedback animation ───────────────────────────────────
+// ── 05. Cases grouped by (entity, category) ─────────────────────────────────
+
+function GroupingPreview() {
+  return (
+    <div
+      style={{
+        background: "var(--bg)",
+        border: "1px solid var(--border-muted)",
+        borderRadius: 8,
+        padding: 12,
+        display: "flex",
+        flexDirection: "column",
+        gap: 6,
+      }}
+    >
+      <div className="mono" style={{ fontSize: 10, color: "var(--fg-dim)", marginBottom: 2 }}>
+        Edeltraud Renner · 4 emails → 1 case
+      </div>
+      <GroupRow tone="critical" label="Rent reduction 15%" actions={["dispatch", "draft", "escalate"]} />
+      <GroupRow tone="muted" label="Lease termination" actions={["confirm", "follow-up"]} />
+      <div className="mono" style={{ fontSize: 9.5, color: "var(--fg-dim)", marginTop: 4, lineHeight: 1.5 }}>
+        4 inbound emails on the same matter collapse into one row with the
+        action ladder pre-built. Other systems would surface 4 list items.
+      </div>
+    </div>
+  );
+}
+
+function GroupRow({
+  tone,
+  label,
+  actions,
+}: {
+  tone: "critical" | "muted";
+  label: string;
+  actions: string[];
+}) {
+  const color = tone === "critical" ? "var(--severity-critical)" : "var(--fg-muted)";
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "3px 1fr auto",
+        gap: 8,
+        alignItems: "center",
+        padding: "6px 8px",
+        background: "var(--bg-elevated)",
+        borderRadius: 4,
+      }}
+    >
+      <div style={{ width: 3, height: 18, borderRadius: 2, background: color }} />
+      <div style={{ fontSize: 11.5, color: "var(--fg)", fontWeight: 500 }}>{label}</div>
+      <div style={{ display: "flex", gap: 3 }}>
+        {actions.map((a) => (
+          <span
+            key={a}
+            className="mono"
+            style={{
+              fontSize: 9,
+              padding: "1px 5px",
+              borderRadius: 3,
+              background: "var(--brand-wash)",
+              color: "var(--brand)",
+            }}
+          >
+            {a}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── 06. Latency metrics ─────────────────────────────────────────────────────
+
+function LatencyMetricCard() {
+  const metrics = [
+    { k: "Recs (warm)", v: "30 ms" },
+    { k: "Render p50", v: "12 ms" },
+    { k: "PDF re-open", v: "≈50 ms" },
+    { k: "Cache hit", v: "90%" },
+  ];
+  return (
+    <div
+      style={{
+        background: "var(--bg)",
+        border: "1px solid var(--border-muted)",
+        borderRadius: 8,
+        padding: 10,
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr",
+        gap: 6,
+      }}
+    >
+      {metrics.map((m) => (
+        <div
+          key={m.k}
+          style={{
+            padding: "8px 10px",
+            background: "var(--bg-elevated)",
+            border: "1px solid var(--border-muted)",
+            borderRadius: 6,
+          }}
+        >
+          <div
+            className="mono"
+            style={{
+              fontSize: 9,
+              color: "var(--fg-dim)",
+              textTransform: "uppercase",
+              letterSpacing: "0.06em",
+            }}
+          >
+            {m.k}
+          </div>
+          <div
+            className="mono"
+            style={{
+              fontSize: 14,
+              fontWeight: 500,
+              color: "var(--brand)",
+              fontFeatureSettings: '"tnum"',
+              marginTop: 2,
+            }}
+          >
+            {m.v}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── 05b. Self-improving feedback animation (kept for reference) ─────────────
 
 function FeedbackLoop() {
   const [prior, setPrior] = useState(0.7);

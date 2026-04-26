@@ -48,6 +48,37 @@ export default function Home() {
     };
     load();
     const t = setInterval(load, 8_000);
+
+    // Pre-fetch the dashboard's heavy endpoints in the background while
+    // the user reads the home pitch. /api/recommendations is the cold
+    // path (~10 s on a fresh server); kicking it off here means the
+    // dashboard paints from the warm cache when the user clicks through.
+    // Both responses also seed the sessionStorage caches the dashboard
+    // and graph hydrate from on mount.
+    void fetch("/api/recommendations")
+      .then((r) => r.json())
+      .then((d) => {
+        try {
+          sessionStorage.setItem(
+            "hausbuch:recs:v1",
+            JSON.stringify(d?.recommendations ?? []),
+          );
+        } catch {
+          /* sessionStorage disabled — fine */
+        }
+      })
+      .catch(() => {});
+    void fetch("/api/graph")
+      .then((r) => r.json())
+      .then((d) => {
+        try {
+          sessionStorage.setItem("hausbuch:graph:v1", JSON.stringify(d));
+        } catch {
+          /* ignore */
+        }
+      })
+      .catch(() => {});
+
     return () => {
       cancelled = true;
       clearInterval(t);
@@ -322,9 +353,9 @@ function DemoNarrative() {
       ),
       body: (
         <>
-          Every Hausverwalter we talked to manages 50+ buildings out of one
-          inbox. A water leak today turns into a Mietminderung in three
-          months and an Anwaltschreiben in six. Every dispute has to be
+          Every property manager we talked to runs 50+ buildings out of one
+          inbox. A water leak today turns into a rent-reduction notice in
+          three months and an attorney letter in six. Every dispute has to be
           defensible — by date — months later. Today they keep that in
           their head and 12 spreadsheets.
         </>
@@ -344,9 +375,9 @@ function DemoNarrative() {
       ),
       body: (
         <>
-          Edeltraud Renner emails a Mietminderung citing Wasserschaden +
-          Schimmel. The engine reads the body, dispatches Sanitär Schulze
-          for the leak, drafts a tenant status update that says{" "}
+          Edeltraud Renner emails a rent-reduction notice citing water
+          damage + mold. The engine reads the body, dispatches Sanitär
+          Schulze for the leak, drafts a tenant status update that says{" "}
           <em>&ldquo;we&apos;ve already contacted them&rdquo;</em>, and queues a
           legal review — all from a single rec row. The dispatch lands as
           a fact, so the next status update inherits it.
@@ -499,6 +530,7 @@ function DemoNarrative() {
         </>
       ),
       widget: <AgentDemo />,
+      cta: { label: "Try our agent now", href: "/dashboard?agent=1" },
     },
   ];
 
@@ -525,9 +557,9 @@ function DemoNarrative() {
             marginBottom: 8,
           }}
         >
-          The whole pitch,{" "}
+          The{" "}
           <span className="serif-italic" style={{ color: "var(--brand-tint)", fontWeight: 400 }}>
-            scrollable.
+            pitch.
           </span>
         </h2>
         <p
@@ -659,9 +691,9 @@ function ActionLadderDemo() {
       <div style={{ display: "grid", gridTemplateColumns: "4px 1fr auto", gap: 12, alignItems: "center" }}>
         <div style={{ width: 4, height: 36, borderRadius: 2, background: "var(--severity-critical)" }} />
         <div>
-          <div style={{ fontSize: 13.5, fontWeight: 500 }}>Mietminderung 15% angekündigt</div>
+          <div style={{ fontSize: 13.5, fontWeight: 500 }}>Rent reduction 15% announced</div>
           <div className="font-mono" style={{ fontSize: 11, color: "var(--fg-dim)", marginTop: 2 }}>
-            Frau Edeltraud Renner · root cause: Wasserschaden + Schimmelbefall
+            Edeltraud Renner · root cause: water damage + mold
           </div>
         </div>
         <div className="font-mono" style={{ fontSize: 10, color: "var(--severity-critical)" }}>
@@ -673,7 +705,7 @@ function ActionLadderDemo() {
         {[
           {
             id: "dispatch" as const,
-            label: "1. Dispatch Sanitär Schulze for Wasserschaden",
+            label: "1. Dispatch Sanitär Schulze for the water damage",
             icon: "→",
             tone: "var(--brand)",
           },
@@ -685,7 +717,7 @@ function ActionLadderDemo() {
           },
           {
             id: null,
-            label: "3. Legal review pending — Anwalt prepared",
+            label: "3. Legal review pending — counsel prepared",
             icon: "⚖",
             tone: "var(--fg-muted)",
           },
@@ -736,17 +768,17 @@ function ActionLadderDemo() {
           }}
         >
           <div className="font-mono" style={{ fontSize: 10, color: "var(--fg-dim)", marginBottom: 6 }}>
-            TO Frau Edeltraud Renner · SUBJECT Statusupdate: Mietminderung
+            TO Edeltraud Renner · SUBJECT Status update: rent-reduction notice
           </div>
-          {`Sehr geehrte Frau Renner,
+          {`Dear Ms. Renner,
 
-vielen Dank für Ihre Mitteilung. Wir bestätigen den Eingang Ihrer Mietminderungs-Ankündigung wegen Wasserschaden und Schimmelbefall.
+Thank you for your notice. We confirm receipt of your rent-reduction announcement citing water damage and mold.
 
-Wir haben bereits Sanitär Schulze GmbH mit der Mängelbehebung beauftragt. Ein konkreter Reparaturtermin folgt innerhalb der nächsten Werktage.
+We have already engaged Sanitär Schulze GmbH to remediate the issues. A specific repair date will follow within the next business days.
 
-Mit freundlichen Grüßen
+Best regards,
 Anna Berger
-Huber & Partner Immobilienverwaltung`}
+Huber & Partner Property Management`}
         </div>
       )}
       {open === "dispatch" && (
@@ -764,14 +796,14 @@ Huber & Partner Immobilienverwaltung`}
           }}
         >
           <div className="font-mono" style={{ fontSize: 10, color: "var(--fg-dim)", marginBottom: 6 }}>
-            TO Sanitär Schulze GmbH · SUBJECT Reparaturauftrag — Wasserschaden WE 29
+            TO Sanitär Schulze GmbH · SUBJECT Repair order — water damage, unit 29
           </div>
-          {`Sehr geehrter Herr Jessel,
+          {`Dear Mr. Jessel,
 
-wir bitten Sie dringend um die sofortige Behebung eines Wasserschadens, der zu einer angekündigten Mietminderung führt. Bitte vereinbaren Sie einen Termin innerhalb der nächsten 48 Stunden.
+We urgently request immediate remediation of a water-damage issue that has triggered a tenant rent-reduction notice. Please schedule an on-site appointment within the next 48 hours.
 
-Mit freundlichen Grüßen
-Huber & Partner Immobilienverwaltung`}
+Best regards,
+Huber & Partner Property Management`}
         </div>
       )}
     </div>
@@ -786,11 +818,11 @@ Huber & Partner Immobilienverwaltung`}
  */
 function TimelineDemo() {
   const anchors = [
-    { d: "2024-01-15", facts: 12, line: "tenancy.kaltmiete  €1,781 / month" },
-    { d: "2024-08-10", facts: 38, line: "incident.type  water_damage  ^[Wasserschaden Bad]" },
-    { d: "2025-03-22", facts: 71, line: "incident.type  mold  ^[Schimmel im Schlafzimmer]" },
-    { d: "2025-12-15", facts: 124, line: "legal.mietminderung.prozent  15  ^[Mietminderung Ankuendigung]" },
-    { d: "2026-04-26", facts: 167, line: "incident.status  dispatched  ^[Sanitär Schulze beauftragt]" },
+    { d: "2024-01-15", facts: 12, line: "tenancy.rent.base  €1,781 / month" },
+    { d: "2024-08-10", facts: 38, line: "incident.type  water_damage  ^[bathroom leak report]" },
+    { d: "2025-03-22", facts: 71, line: "incident.type  mold  ^[mold in bedroom report]" },
+    { d: "2025-12-15", facts: 124, line: "legal.rent_reduction.pct  15  ^[rent-reduction notice]" },
+    { d: "2026-04-26", facts: 167, line: "incident.status  dispatched  ^[Sanitär Schulze engaged]" },
   ];
   const [idx, setIdx] = useState(anchors.length - 1);
   const cur = anchors[idx];
@@ -877,13 +909,13 @@ function VerifiableDemo() {
         }}
       >
         <div style={{ fontSize: 9, color: "#888", marginBottom: 6 }}>
-          20250108_mietminderung_we29.pdf · page 1
+          20250108_rent_reduction_unit29.pdf · page 1
         </div>
         <div style={{ fontWeight: 600, marginBottom: 8 }}>
-          Mietminderung Ankündigung — WE 29
+          Rent reduction notice — Unit 29
         </div>
-        <div>Sehr geehrte Verwaltung,</div>
-        <div style={{ marginTop: 8 }}>da die Baumängel{" "}
+        <div>To the property management,</div>
+        <div style={{ marginTop: 8 }}>Because the defects{" "}
           <span
             style={{
               background: "color-mix(in srgb, var(--brand) 28%, transparent)",
@@ -892,9 +924,9 @@ function VerifiableDemo() {
               boxShadow: "0 0 0 1px color-mix(in srgb, var(--brand) 60%, transparent)",
             }}
           >
-            (Wasserschaden, Schimmel)
+            (water damage, mold)
           </span>{" "}
-          in meiner Wohnung WE 29 seit über 3 Monaten nicht behoben sind, werde ich die Miete ab{" "}
+          in my apartment unit 29 have not been remediated for over 3 months, I will{" "}
           <span
             style={{
               background: "color-mix(in srgb, var(--brand) 28%, transparent)",
@@ -903,31 +935,31 @@ function VerifiableDemo() {
               boxShadow: "0 0 0 1px color-mix(in srgb, var(--brand) 60%, transparent)",
             }}
           >
-            02.02.2026 um 15% mindern
+            reduce my rent by 15% starting 2 Feb 2026
           </span>
           .</div>
         <div style={{ marginTop: 14 }}>Edeltraud Renner</div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <FactChip
-          predicate="legal.mietminderung.prozent"
+          predicate="legal.rent_reduction.pct"
           value="15"
-          source="20250108_mietminderung_we29.pdf"
+          source="20250108_rent_reduction_unit29.pdf"
         />
         <FactChip
-          predicate="legal.mietminderung.start"
+          predicate="legal.rent_reduction.start"
           value="2026-02-02"
-          source="20250108_mietminderung_we29.pdf"
+          source="20250108_rent_reduction_unit29.pdf"
         />
         <FactChip
           predicate="incident.type"
           value="water_damage"
-          source="20250108_mietminderung_we29.pdf"
+          source="20250108_rent_reduction_unit29.pdf"
         />
         <FactChip
           predicate="incident.type"
           value="mold"
-          source="20250108_mietminderung_we29.pdf"
+          source="20250108_rent_reduction_unit29.pdf"
         />
       </div>
     </div>
@@ -988,8 +1020,8 @@ function AgentDemo() {
       q: "How much rent does Edeltraud pay?",
       a: (
         <>
-          Frau Edeltraud Renner zahlt eine Kaltmiete von €1.781/Monat plus €310 Nebenkosten.{" "}
-          <span style={{ color: "var(--brand)" }}>^[Stammdaten: Frau Edeltraud Renner]</span>
+          Edeltraud Renner pays €1,781/month base rent plus €310 in operating costs.{" "}
+          <span style={{ color: "var(--brand)" }}>^[Master record: Edeltraud Renner]</span>
         </>
       ),
     },
@@ -997,18 +1029,18 @@ function AgentDemo() {
       q: "All open issues for Edeltraud",
       a: (
         <>
-          Mietminderung 15% (Wasserschaden + Schimmelbefall) und Kündigung Mietvertrag — beide kritisch.{" "}
-          <span style={{ color: "var(--brand)" }}>^[Mietminderung Ankuendigung]</span>{" "}
-          <span style={{ color: "var(--brand)" }}>^[Kuendigung Mietvertrag]</span>
+          15% rent reduction (water damage + mold) and lease termination — both critical.{" "}
+          <span style={{ color: "var(--brand)" }}>^[rent-reduction notice]</span>{" "}
+          <span style={{ color: "var(--brand)" }}>^[lease termination notice]</span>
         </>
       ),
     },
     {
-      q: "Who lives in WE 32?",
+      q: "Who lives in unit 32?",
       a: (
         <>
-          In WE 32 wohnt Frau Magrit Mitschke seit 2021-08-27.{" "}
-          <span style={{ color: "var(--brand)" }}>^[Stammdaten: WE 32]</span>
+          Magrit Mitschke has lived in unit 32 since 27 Aug 2021.{" "}
+          <span style={{ color: "var(--brand)" }}>^[Master record: unit 32]</span>
         </>
       ),
     },
@@ -1016,8 +1048,8 @@ function AgentDemo() {
       q: "Total garbage fee 2024?",
       a: (
         <>
-          Müllgebühr 2024: €181,96.{" "}
-          <span style={{ color: "var(--brand)" }}>^[20250422_bka_LTR-0108]</span>
+          Garbage fee 2024: €181.96.{" "}
+          <span style={{ color: "var(--brand)" }}>^[2025-04-22 operating-cost letter LTR-0108]</span>
         </>
       ),
     },

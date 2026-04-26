@@ -147,6 +147,17 @@ export default function DashboardPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // Auto-open the agent palette when arriving via /dashboard?agent=1.
+  // The home pitch's "Try our agent now" CTA lands here so the user
+  // doesn't have to hit ⌘K manually after the navigation.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("agent") === "1") {
+      setPaletteOpen(true);
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 

@@ -235,11 +235,28 @@ export default function DashboardPage() {
   // Interleave by category within each severity tier so the manager sees a
   // diverse mix at the top, not 24 Mietminderungs in a row. Also drops
   // anything the user has already resolved this session.
-  const visibleRecs = recs.filter((r) => !resolvedIds.has(r.id));
+  //
+  // Visibility cap: triage view, not a backlog dump. The engine surfaces
+  // ~170 open recs across the seeded corpus — that's noise. Take the top
+  // VISIBLE_LIMIT severity-ordered with critical fully kept and the
+  // remaining slots filled high → medium → low. The hidden tail count is
+  // surfaced as a footer link so the user knows the queue isn't a lie.
+  const VISIBLE_LIMIT = 15;
+  const allOpen = recs.filter((r) => !resolvedIds.has(r.id));
+  const ranked: Recommendation[] = [];
+  for (const sev of SEVERITY_ORDER) {
+    const tier = interleaveByCategory(allOpen.filter((r) => r.severity === sev));
+    for (const r of tier) {
+      if (ranked.length >= VISIBLE_LIMIT) break;
+      ranked.push(r);
+    }
+    if (ranked.length >= VISIBLE_LIMIT) break;
+  }
+  const hiddenCount = allOpen.length - ranked.length;
   const groups = SEVERITY_ORDER
     .map((sev) => ({
       sev,
-      items: interleaveByCategory(visibleRecs.filter((r) => r.severity === sev)),
+      items: ranked.filter((r) => r.severity === sev),
     }))
     .filter((g) => g.items.length > 0);
 
@@ -417,6 +434,36 @@ export default function DashboardPage() {
             ))}
           </div>
         ))}
+        {/*
+          Hidden-tail hint. We cap the dashboard at 15 visible recs because
+          a 170-row backlog reads as noise on a triage view. The number
+          here is the truth — the rest are still in the engine, surfaced
+          via the agent (⌘K), /context, or /audit.
+        */}
+        {!loading && hiddenCount > 0 && (
+          <div
+            className="mono"
+            style={{
+              marginTop: 24,
+              padding: "16px 20px",
+              borderTop: "1px solid var(--border-muted)",
+              fontSize: 12,
+              color: "var(--fg-dim)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 16,
+              flexWrap: "wrap",
+            }}
+          >
+            <span>
+              + {hiddenCount} more open recs not shown — triage focuses on the top 15 by severity.
+            </span>
+            <span style={{ color: "var(--fg-muted)" }}>
+              Ask the agent (⌘K) or open <a href="/audit" style={{ color: "var(--brand)" }}>/audit</a> for the full queue.
+            </span>
+          </div>
+        )}
       </section>
 
       <CmdK

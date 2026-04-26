@@ -30,7 +30,7 @@ type UploadResponse = {
   uploaded: FileResult[];
 };
 
-export function UploadInspector() {
+export function UploadInspector({ onIngested }: { onIngested?: () => void } = {}) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<UploadResponse | null>(null);
@@ -85,6 +85,9 @@ export function UploadInspector() {
         return;
       }
       setResult(data);
+      // Tell parent (e.g. /sandbox) that new facts have landed so it can
+      // refetch /api/recommendations and reveal the dashboard view.
+      onIngested?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

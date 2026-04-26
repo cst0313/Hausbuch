@@ -234,9 +234,22 @@ function ActionRow({
         background: expanded.has(a.id) ? "var(--bg-elevated)" : "transparent",
       }}
     >
-      <button
+      {/*
+        Row is a clickable div, NOT a button. The "stream →" affordance below
+        is a real <button>, and HTML forbids nested buttons (causes a React
+        hydration error). Keyboard equivalent provided via tabIndex + Enter.
+      */}
+      <div
+        role="button"
+        tabIndex={0}
         onClick={() => toggle(a.id)}
-        className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-[color:var(--bg-hover)] rounded transition-colors"
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            toggle(a.id);
+          }
+        }}
+        className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-[color:var(--bg-hover)] rounded transition-colors cursor-pointer"
       >
         <span className="text-[10px] font-mono" style={{ color: "var(--fg-dim)" }}>
           {new Date(a.ts).toISOString().slice(11, 19)}
@@ -280,7 +293,7 @@ function ActionRow({
             {a.partner}
           </span>
         )}
-      </button>
+      </div>
 
       {expanded.has(a.id) && (
         <div className="px-4 pb-3 space-y-2">
@@ -335,9 +348,17 @@ function StreamCard({
         background: "var(--bg-elevated)",
       }}
     >
-      <button
+      <div
+        role="button"
+        tabIndex={0}
         onClick={() => toggle(stream.target)}
-        className="w-full flex flex-wrap items-center gap-3 px-4 py-3 text-left rounded-lg hover:bg-[color:var(--bg-hover)] transition-colors"
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            toggle(stream.target);
+          }
+        }}
+        className="w-full flex flex-wrap items-center gap-3 px-4 py-3 text-left rounded-lg hover:bg-[color:var(--bg-hover)] transition-colors cursor-pointer"
       >
         <span style={{ color: "var(--fg-dim)" }} className="text-[10px] font-mono shrink-0">
           {open ? "▾" : "▸"}
@@ -364,7 +385,7 @@ function StreamCard({
         <span className="ml-auto text-[10px] font-mono" style={{ color: "var(--fg-dim)" }}>
           {t("audit.stream.latest")}: {last?.action} · {new Date(stream.last_at).toISOString().slice(11, 19)}
         </span>
-      </button>
+      </div>
 
       {open && (
         <ol className="border-t px-4 py-2 space-y-1" style={{ borderColor: "var(--border)" }}>

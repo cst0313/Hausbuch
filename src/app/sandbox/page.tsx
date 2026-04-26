@@ -335,7 +335,18 @@ export default function SandboxPage() {
           >
             Upload your own
           </h2>
-          <UploadInspector />
+          <UploadInspector
+            onIngested={() => {
+              // New facts landed — pull fresh stats + recs and scroll the
+              // user to the sandbox dashboard so they see what was extracted.
+              setRefresh((n) => n + 1);
+              setTimeout(() => {
+                document
+                  .getElementById("sandbox-dashboard")
+                  ?.scrollIntoView({ behavior: "smooth", block: "start" });
+              }, 250);
+            }}
+          />
         </section>
 
         {/* Recommendations from whatever has been uploaded — same engine,
@@ -391,6 +402,7 @@ function SandboxRecsPreview({ recs }: { recs: SandboxRec[] | null }) {
   if (recs.length === 0) {
     return (
       <section
+        id="sandbox-dashboard"
         style={{
           marginTop: 36,
           marginBottom: 36,
@@ -414,9 +426,10 @@ function SandboxRecsPreview({ recs }: { recs: SandboxRec[] | null }) {
           Sandbox dashboard
         </h2>
         <p style={{ margin: 0, fontSize: 13, color: "var(--fg-muted)" }}>
-          No recommendations yet. Add entities or upload documents above and the
-          same engine that powers <Link href="/dashboard" style={{ color: "var(--brand)" }}>/dashboard</Link>{" "}
-          will surface what needs attention here.
+          No recommendations yet. Drop a document above (or hit{" "}
+          <strong>Load sample bundle</strong>) and the same engine that powers{" "}
+          <Link href="/dashboard" style={{ color: "var(--brand)" }}>/dashboard</Link>{" "}
+          will surface what needs attention here within seconds.
         </p>
       </section>
     );
@@ -431,7 +444,7 @@ function SandboxRecsPreview({ recs }: { recs: SandboxRec[] | null }) {
           ? "var(--severity-medium)"
           : "var(--severity-low)";
   return (
-    <section style={{ marginTop: 36, marginBottom: 36 }}>
+    <section id="sandbox-dashboard" style={{ marginTop: 36, marginBottom: 36, scrollMarginTop: 80 }}>
       <div
         style={{
           display: "flex",
@@ -442,19 +455,26 @@ function SandboxRecsPreview({ recs }: { recs: SandboxRec[] | null }) {
           flexWrap: "wrap",
         }}
       >
-        <h2
-          className="mono"
-          style={{
-            fontSize: 11,
-            color: "var(--fg-dim)",
-            textTransform: "uppercase",
-            letterSpacing: "0.06em",
-            margin: 0,
-            fontWeight: 600,
-          }}
-        >
-          Sandbox dashboard · {recs.length} open
-        </h2>
+        <div>
+          <h2
+            className="mono"
+            style={{
+              fontSize: 11,
+              color: "var(--fg-dim)",
+              textTransform: "uppercase",
+              letterSpacing: "0.06em",
+              margin: "0 0 6px",
+              fontWeight: 600,
+            }}
+          >
+            Sandbox dashboard · {recs.length} open
+          </h2>
+          <div style={{ fontSize: 13, color: "var(--fg-muted)" }}>
+            What the rec engine pulled out of your sandbox state. Same logic as
+            the live <Link href="/dashboard" style={{ color: "var(--brand)" }}>dashboard</Link>{" "}
+            — every row is real-time off the fact store.
+          </div>
+        </div>
         <Link
           href="/dashboard"
           className="mono"

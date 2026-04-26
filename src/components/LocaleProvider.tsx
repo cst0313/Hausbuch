@@ -68,6 +68,7 @@ const copy: Record<string, { en: string; de: string }> = {
   "nav.inbox": { en: "Inbox", de: "Posteingang" },
   "nav.queue": { en: "Queue", de: "Warteschlange" },
   "nav.audit": { en: "Audit", de: "Audit" },
+  "nav.graph": { en: "Graph", de: "Graph" },
   "nav.docs": { en: "Docs", de: "Dokumentation" },
   "nav.research": { en: "Research", de: "Forschung" },
   "nav.sandbox": { en: "Sandbox", de: "Sandbox" },

@@ -172,6 +172,9 @@ export default function Home() {
         )}
       </section>
 
+      {/* Demo narrative — the two-minute pitch as a scannable page block */}
+      <DemoNarrative />
+
       {/* Why this wins — six interactive differentiators */}
       <WhyThisWins />
 
@@ -283,6 +286,347 @@ export default function Home() {
         </div>
       </footer>
     </>
+  );
+}
+
+/**
+ * Demo narrative section — the 2-minute pitch as a structured block.
+ * Six beats: problem → one-click automation → replay → verify → speed →
+ * agent. Each beat has a numbered eyebrow, a one-line title, a short
+ * body, and an optional inline metric or CTA. Designed to scroll through
+ * naturally during a live demo.
+ */
+function DemoNarrative() {
+  const beats: Array<{
+    n: string;
+    eyebrow: string;
+    title: React.ReactNode;
+    body: React.ReactNode;
+    cta?: { label: string; href: string };
+    metric?: React.ReactNode;
+  }> = [
+    {
+      n: "01",
+      eyebrow: "/ the problem",
+      title: (
+        <>
+          German property managers run on{" "}
+          <span className="serif-italic" style={{ color: "var(--brand-tint)" }}>
+            paper
+          </span>
+          .
+        </>
+      ),
+      body: (
+        <>
+          Every Hausverwalter we talked to manages 50+ buildings out of one
+          inbox. A water leak today turns into a Mietminderung in three
+          months and an Anwaltschreiben in six. Every dispute has to be
+          defensible — by date — months later. Today they keep that in
+          their head and 12 spreadsheets.
+        </>
+      ),
+    },
+    {
+      n: "02",
+      eyebrow: "/ one-click automation",
+      title: (
+        <>
+          Dispatch, draft, escalate —{" "}
+          <span className="serif-italic" style={{ color: "var(--brand-tint)" }}>
+            in one click each
+          </span>
+          .
+        </>
+      ),
+      body: (
+        <>
+          Edeltraud Renner emails a Mietminderung citing Wasserschaden +
+          Schimmel. The engine reads the body, dispatches Sanitär Schulze
+          for the leak, drafts a tenant status update that says{" "}
+          <em>&ldquo;we&apos;ve already contacted them&rdquo;</em>, and queues a
+          legal review — all from a single rec row. The dispatch lands as
+          a fact, so the next status update inherits it.
+        </>
+      ),
+      cta: { label: "Open dashboard", href: "/dashboard" },
+    },
+    {
+      n: "03",
+      eyebrow: "/ replayable",
+      title: (
+        <>
+          Drag the timeline.{" "}
+          <span className="serif-italic" style={{ color: "var(--brand-tint)" }}>
+            See exactly what we knew on March 12.
+          </span>
+        </>
+      ),
+      body: (
+        <>
+          Every fact carries valid-time AND known-time. Scrubbing the
+          slider on /context/[entity] re-projects the page as it was on
+          that date — what was true in the world, given only what we knew
+          then. The same data point that defends a decision today also
+          defends it in court six months from now.
+        </>
+      ),
+      cta: { label: "Try /context/tenant:MIE-017", href: "/context/tenant:MIE-017" },
+    },
+    {
+      n: "04",
+      eyebrow: "/ verifiable",
+      title: (
+        <>
+          Click any fact.{" "}
+          <span className="serif-italic" style={{ color: "var(--brand-tint)" }}>
+            See the bytes that produced it.
+          </span>
+        </>
+      ),
+      body: (
+        <>
+          Every claim points back to a source span. PDFs render the actual
+          page with the extracted region outlined. Email facts open the
+          whole thread. Bank facts open the corresponding line of the
+          Sparkasse statement, with rows above and below for context. No
+          model is paraphrasing — provenance lives at the storage layer.
+        </>
+      ),
+      cta: { label: "Inspect the graph", href: "/graph" },
+    },
+    {
+      n: "05",
+      eyebrow: "/ lightning fast",
+      title: (
+        <>
+          224 open recs in{" "}
+          <span className="serif-italic" style={{ color: "var(--brand-tint)" }}>
+            30 ms
+          </span>
+          .
+        </>
+      ),
+      body: (
+        <>
+          The recs engine builds the queue from 16,874 facts in &lt;7 s
+          cold, &lt;30 ms warm — write-driven cache, pre-warmed at seed,
+          re-warmed after every ingest. Context.md rendered in 12 ms with
+          a stable byte-prefix that hits Anthropic&apos;s prompt cache 90 %
+          of the time. Re-opening a PDF for a different fact: ~50 ms (canvas
+          reused, only rect math runs).
+        </>
+      ),
+      metric: (
+        <div
+          className="font-mono"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+            gap: 10,
+            marginTop: 16,
+            fontSize: 11,
+          }}
+        >
+          {[
+            { k: "Recs warm", v: "30 ms" },
+            { k: "Render p50", v: "12 ms" },
+            { k: "Tokens (d=1)", v: "−97 %" },
+            { k: "Cache hit", v: "90 %" },
+          ].map((m) => (
+            <div
+              key={m.k}
+              style={{
+                padding: "10px 12px",
+                border: "1px solid var(--border-muted)",
+                borderRadius: 6,
+                background: "var(--bg-elevated)",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 9,
+                  color: "var(--fg-dim)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                }}
+              >
+                {m.k}
+              </div>
+              <div
+                style={{
+                  fontSize: 16,
+                  fontWeight: 500,
+                  color: "var(--brand)",
+                  fontFeatureSettings: '"tnum"',
+                  marginTop: 4,
+                }}
+              >
+                {m.v}
+              </div>
+            </div>
+          ))}
+        </div>
+      ),
+    },
+    {
+      n: "06",
+      eyebrow: "/ the agent",
+      title: (
+        <>
+          ⌘K reads every Context.md{" "}
+          <span className="serif-italic" style={{ color: "var(--brand-tint)" }}>
+            you have
+          </span>
+          .
+        </>
+      ),
+      body: (
+        <>
+          Ask <em>&ldquo;all open issues for Edeltraud&rdquo;</em>,{" "}
+          <em>&ldquo;total garbage fee 2024&rdquo;</em>,{" "}
+          <em>&ldquo;has Magrit&apos;s water been resolved?&rdquo;</em> — answers
+          come back cited, in the same fact format the page renders. The
+          context the agent reads is a padded table with anchored fact
+          blocks: cache-stable, citation-bearing, ~1.6× smaller than the
+          same facts written as plain English prose. Plain markdown drops
+          provenance; ours carries it as a first-class field on every
+          line.
+        </>
+      ),
+    },
+  ];
+
+  return (
+    <section
+      className="border-t"
+      style={{ borderColor: "var(--border)" }}
+      aria-label="Demo narrative"
+    >
+      <div className="max-w-5xl mx-auto px-6 py-20">
+        <p
+          className="text-[11px] font-mono uppercase tracking-wider mb-3"
+          style={{ color: "var(--fg-dim)" }}
+        >
+          / two minutes
+        </p>
+        <h2
+          className="font-display"
+          style={{
+            fontSize: "clamp(2rem, 4vw, 2.75rem)",
+            lineHeight: 1.05,
+            letterSpacing: "-0.025em",
+            fontWeight: 500,
+            marginBottom: 8,
+          }}
+        >
+          The whole pitch,{" "}
+          <span className="serif-italic" style={{ color: "var(--brand-tint)", fontWeight: 400 }}>
+            scrollable.
+          </span>
+        </h2>
+        <p
+          className="text-[15px]"
+          style={{ color: "var(--fg-muted)", maxWidth: 720, lineHeight: 1.55, marginBottom: 40 }}
+        >
+          What problem we&apos;re solving, what the system actually does, and
+          why the numbers hold up. Six beats; click through to any surface
+          to see it live.
+        </p>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
+          {beats.map((b) => (
+            <div
+              key={b.n}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "minmax(80px, 96px) 1fr",
+                gap: 24,
+                paddingTop: 24,
+                borderTop: "1px solid var(--border-muted)",
+              }}
+            >
+              <div>
+                <div
+                  className="font-mono"
+                  style={{
+                    fontSize: 11,
+                    color: "var(--fg-dim)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.08em",
+                    marginBottom: 4,
+                  }}
+                >
+                  {b.eyebrow}
+                </div>
+                <div
+                  className="font-mono"
+                  style={{
+                    fontSize: 26,
+                    fontWeight: 500,
+                    color: "var(--brand)",
+                    fontFeatureSettings: '"tnum"',
+                    letterSpacing: "-0.02em",
+                  }}
+                >
+                  {b.n}
+                </div>
+              </div>
+              <div>
+                <h3
+                  className="font-display"
+                  style={{
+                    fontSize: "clamp(1.4rem, 2.4vw, 1.85rem)",
+                    fontWeight: 500,
+                    letterSpacing: "-0.02em",
+                    lineHeight: 1.15,
+                    margin: "0 0 12px",
+                    color: "var(--fg)",
+                  }}
+                >
+                  {b.title}
+                </h3>
+                <p
+                  style={{
+                    fontSize: 15,
+                    color: "var(--fg-muted)",
+                    lineHeight: 1.6,
+                    margin: 0,
+                    maxWidth: 680,
+                  }}
+                >
+                  {b.body}
+                </p>
+                {b.metric}
+                {b.cta && (
+                  <div style={{ marginTop: 16 }}>
+                    <Link
+                      href={b.cta.href}
+                      className="font-mono"
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "8px 14px",
+                        borderRadius: 6,
+                        border: "1px solid var(--brand)",
+                        color: "var(--brand)",
+                        background: "transparent",
+                        fontSize: 12,
+                        textDecoration: "none",
+                      }}
+                    >
+                      {b.cta.label}
+                      <span>→</span>
+                    </Link>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }
 
